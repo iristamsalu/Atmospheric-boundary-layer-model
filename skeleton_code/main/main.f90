@@ -107,11 +107,13 @@ real(dp), dimension(nz  ) :: uwind, &  ! [m s-1], u component of wind
 real(dp), dimension(nz  ) :: temp, &   ! [K], air temperature
                              pres      ! [Pa], air pressure
 
-!added 21.01.25 by iris                             
+! added 21.01.25 by iris                             
 real(dp), dimension(nz) :: K_m       ! [m^2/s], turbulent diffusion coefficient
 real(dp), dimension(nz) :: K_h       ! [m^2/s], turbulent diffusion coefficient
-!added 27.01.25 by iris
-integer :: model_v = 2                 ! Model version (1, 2 or 3) based on the K calculation
+! added 29.01.25 by iris
+real(dp), dimension(nz) :: Ri_a      ! Array with Richardson nr-s, for testing
+! added 27.01.25 by iris
+integer :: model_v = 3               ! Model version (1, 2 or 3) based on the K calculation
 
 integer :: i, j  ! used for loops
 
@@ -138,7 +140,7 @@ DO WHILE (time <= time_end)
   ! Set lower boundary condition
   call surface_values(theta(1), time+dt)  ! theta = temperature at the surface
   ! Compute K_m for the current time step based on current wind profiles
-  call get_K(hh, uwind, vwind, model_v, theta, K_m, K_h)
+  call get_K(model_v, hh, uwind, vwind, theta, K_m, K_h, Ri_a)
 
   ! Update meteorology
 
@@ -288,6 +290,7 @@ subroutine open_files()
   open(12,file=trim(adjustl(output_dir))//'/theta.dat',status='replace',action='write')
   open(13,file=trim(adjustl(output_dir))//'/Km.dat'   ,status='replace',action='write')
   open(14,file=trim(adjustl(output_dir))//'/Kh.dat'   ,status='replace',action='write')
+  open(15,file=trim(adjustl(output_dir))//'/Ri.dat'   ,status='replace',action='write')
 end subroutine open_files
 
 
@@ -318,6 +321,7 @@ subroutine write_files(time)
   write(12, outfmt_level     ) theta
   write(13, outfmt_level     ) K_m
   write(14, outfmt_level     ) K_h
+  write(15, outfmt_level     ) Ri_a
 end subroutine write_files
 
 
@@ -334,6 +338,7 @@ subroutine close_files()
   close(12)
   close(13)
   close(14)
+  close(15)
 end subroutine close_files
 
 
@@ -444,29 +449,31 @@ end subroutine surface_values
 !-----------------------------------------------------------------------------------------
 ! Get K (turbulent	diffusivity)
 !-----------------------------------------------------------------------------------------
-subroutine get_K(hh, uwind, vwind, model_v, theta, K_m, K_h)
+subroutine get_K(model_v, hh, uwind, vwind, theta, K_m, K_h, Ri_a)
 ! inputs
-real(dp), dimension(nz), intent(in) :: hh
-real(dp), dimension(nz), intent(in) :: uwind, vwind, theta
-integer, intent(in) :: model_v
+real(dp), dimension(nz), intent(in)  :: hh
+real(dp), dimension(nz), intent(in)  :: uwind, vwind, theta
+integer, intent(in)                  :: model_v
 ! output
-real(dp), dimension(nz), intent(out) :: K_m, K_h ! Turbulent diffusion coefficient array [m^2/s]
+real(dp), dimension(nz), intent(out) :: K_m, K_h  ! turbulent diffusion coefficient array [m^2/s]
+real(dp), dimension(nz), intent(out) :: Ri_a  ! array of Richardson nr for testing the meteorology 
 ! constants
-real, parameter :: k = 0.4 ! von Kármán constant
-real, parameter :: lambda = 300.0  ! Mixing length scale [m]
+real(dp), parameter                  :: k = 0.4_dp  ! von Kármán constant
+real(dp), parameter                  :: lambda = 300.0_dp    ! mixing length scale [m]
+real(dp), parameter                  :: grav = 9.81_dp    ! [m s-2], gravitation
 ! local variables
-integer :: hh_index
-real(dp) :: L ! Blackadar mixing length
-real(dp) :: du_dz, dv_dz, windshear
-! variables for model version 3
-real(dp) :: Ri ! Richardson nr
-real(dp) :: f_m, f_h ! Dyer-Businger forms
-real(dp), parameter :: grav = 9.81_dp ! [m s-2], gravitation
-real(dp) :: a1
+integer                              :: hh_index
+real(dp)                             :: L   ! Blackadar mixing length
+real(dp)                             :: du_dz, dv_dz, windshear
+real(dp)                             :: Ri    ! Richardson nr
+real(dp)                             :: f_m, f_h    ! Dyer-Businger forms
+real(dp)                             :: a1
+real(dp)                             :: denom, theta_smoothed
 
 ! Model version 1
 IF (model_v == 1) THEN
   K_m = 5.0_dp ! [m^2/s]
+  K_h = 5.0_dp ! [m^2/s]
 
 ! Model version 2
 ELSE IF (model_v == 2) THEN
@@ -482,33 +489,38 @@ ELSE IF (model_v == 2) THEN
     K_m(hh_index) = L**2.0_dp * windshear
   END DO
   ! Set boundaries
-  K_m(1) = K_m(2)
+  K_m(1)  = 0.0_dp
   K_m(nz) = K_m(nz-1)
+  K_h = K_m
 
 !Model version 3
 ELSE IF (model_v == 3) THEN
-  ! Calculate K_m at every altitude for uwind and vwind and K_h for theta
+  ! calculate K_m at every altitude for uwind and vwind and K_h for theta
   DO hh_index = 2, size(hh) - 1
-    ! Calculate Richardson nr
-    Ri = grav / ((theta(hh_index+1) + theta(hh_index)) / 2.0_dp) * &
-        ((theta(hh_index+1) - theta(hh_index)) / &
-        ((uwind(hh_index+1) - uwind(hh_index))**2.0_dp + &
-        (vwind(hh_index+1) - vwind(hh_index))**2.0_dp)) * &
-        (hh(hh_index+1) - hh(hh_index))
+    ! calculate Richardson nr
+    Ri = grav / ((theta(hh_index+1)+theta(hh_index)) / 2.0_dp)*  &
+                ((theta(hh_index+1) - theta(hh_index))          /  &
+                ((uwind(hh_index+1) - uwind(hh_index))**2.0_dp  +  &
+                (vwind(hh_index+1) - vwind(hh_index))**2.0_dp)) *  &
+                (hh(hh_index+1) - hh(hh_index))
     
-    ! Calculate Dyer-Businger form
-    ! Unstable conditions
-    IF (Ri < 0.0_dp) THEN
+    ! calculate Dyer-Businger form
+    ! unstable conditions
+    IF (Ri <= 0.0_dp) THEN
       f_m = (1.0_dp - 16.0_dp*Ri)**(0.5_dp)
       f_h = (1.0_dp - 16.0_dp*Ri)**(0.75_dp)
-    ELSE IF (Ri >= 0.0_dp .AND. Ri < 0.2_dp) THEN
-      a1 = (1.0_dp - 5.0_dp*Ri)**2.0_dp
+    ! conditions?
+    ELSE IF (Ri > 0.0_dp .AND. Ri <= 0.2_dp) THEN
+      a1  = (1.0_dp - 5.0_dp*Ri)**2.0_dp
       f_m = max(a1, 0.1_dp)
       f_h = max(a1, 0.1_dp)
-    ! Very stable
+    ! very stable conditions
     ELSE IF (Ri > 0.2_dp) THEN
       f_m = 0.1_dp
       f_h = 0.1_dp
+    ! ELSE IF (Ri < -0.0625_dp) THEN
+    !   f_m = 0.0_dp
+    !   f_h = 0.0_dp
     END IF
 
     ! Compute mixing length l
@@ -517,16 +529,21 @@ ELSE IF (model_v == 3) THEN
     du_dz = (uwind(hh_index+1) - uwind(hh_index)) / (hh(hh_index+1) - hh(hh_index))
     dv_dz = (vwind(hh_index+1) - vwind(hh_index)) / (hh(hh_index+1) - hh(hh_index))
     ! Calculate windshear
-    windshear = sqrt(du_dz**2.0_dp + dv_dz**2.0_dp)
-    ! Calculate K_m and K_h
+    windshear = sqrt((du_dz**2.0_dp) + (dv_dz**2.0_dp))
+    ! calculate K_m and K_h
     K_m(hh_index) = L**2.0_dp * windshear * f_m
     K_h(hh_index) = L**2.0_dp * windshear * f_h
+    ! append Richardson nr to an array - for testing
+    Ri_a(hh_index) = Ri
   END DO
   ! Set boundaries
-  K_m(1) = K_m(2)
+  K_m(1)  = 0
   K_m(nz) = K_m(nz-1)
-  K_h(1) = K_h(2)
+  K_h(1)  = 0
   K_h(nz) = K_h(nz-1)
+  ! Set boundaries for Richardson array
+  Ri_a(1)  = Ri_a(2)
+  Ri_a(nz) = Ri_a(nz-1)
 
 END IF
 
