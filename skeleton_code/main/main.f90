@@ -109,6 +109,7 @@ real(dp), dimension(nz  ) :: temp, &   ! [K], air temperature
 
 !added 21.01.25 by iris                             
 real(dp), dimension(nz) :: K_m       ! [m^2/s], turbulent diffusion coefficient
+real(dp), dimension(nz) :: K_h       ! [m^2/s], turbulent diffusion coefficient
 !added 27.01.25 by iris
 integer :: model_v = 2                 ! Model version (1, 2 or 3) based on the K calculation
 
@@ -129,6 +130,7 @@ call write_files(time)   ! write initial values
 !-----------------------------------------------------------------------------------------
 ! Start main loop
 !-----------------------------------------------------------------------------------------
+
 DO WHILE (time <= time_end)
   !---------------------------------------------------------------------------------------
   ! Meteorology
@@ -136,7 +138,7 @@ DO WHILE (time <= time_end)
   ! Set lower boundary condition
   call surface_values(theta(1), time+dt)  ! theta = temperature at the surface
   ! Compute K_m for the current time step based on current wind profiles
-  call get_K(hh, uwind, vwind, model_v, K_m)
+  call get_K(hh, uwind, vwind, model_v, theta, K_m, K_h)
 
   ! Update meteorology
 
@@ -157,11 +159,10 @@ DO WHILE (time <= time_end)
 
     ! Update potential temperature
     theta(hh_index) = theta(hh_index) + dt * ( &
-                     K_m(hh_index+1) * (theta(hh_index+1) - theta(hh_index)) / (hh(hh_index+1) - hh(hh_index)) - &
-                     K_m(hh_index) * (theta(hh_index) - theta(hh_index-1)) / (hh(hh_index) - hh(hh_index-1))) / &
+                     K_h(hh_index+1) * (theta(hh_index+1) - theta(hh_index)) / (hh(hh_index+1) - hh(hh_index)) - &
+                     K_h(hh_index) * (theta(hh_index) - theta(hh_index-1)) / (hh(hh_index) - hh(hh_index-1))) / &
                      ((hh(hh_index+1) - hh(hh_index-1)) / 2.0)                 
   END DO
-
   !---------------------------------------------------------------------------------------
   ! Emission
   !---------------------------------------------------------------------------------------
@@ -251,7 +252,6 @@ DO WHILE (time <= time_end)
   counter = counter + 1
 
 end do
-
 !-----------------------------------------------------------------------------------------
 ! Finalization
 !-----------------------------------------------------------------------------------------
@@ -286,6 +286,8 @@ subroutine open_files()
   open(10,file=trim(adjustl(output_dir))//'/uwind.dat',status='replace',action='write')
   open(11,file=trim(adjustl(output_dir))//'/vwind.dat',status='replace',action='write')
   open(12,file=trim(adjustl(output_dir))//'/theta.dat',status='replace',action='write')
+  open(13,file=trim(adjustl(output_dir))//'/Km.dat'   ,status='replace',action='write')
+  open(14,file=trim(adjustl(output_dir))//'/Kh.dat'   ,status='replace',action='write')
 end subroutine open_files
 
 
@@ -314,6 +316,8 @@ subroutine write_files(time)
   write(10, outfmt_level     ) uwind
   write(11, outfmt_level     ) vwind
   write(12, outfmt_level     ) theta
+  write(13, outfmt_level     ) K_m
+  write(14, outfmt_level     ) K_h
 end subroutine write_files
 
 
@@ -328,6 +332,8 @@ subroutine close_files()
   close(10)
   close(11)
   close(12)
+  close(13)
+  close(14)
 end subroutine close_files
 
 
@@ -438,13 +444,13 @@ end subroutine surface_values
 !-----------------------------------------------------------------------------------------
 ! Get K (turbulent	diffusivity)
 !-----------------------------------------------------------------------------------------
-subroutine get_K(hh, uwind, vwind, model_v, K_m)
+subroutine get_K(hh, uwind, vwind, model_v, theta, K_m, K_h)
 ! inputs
 real(dp), dimension(nz), intent(in) :: hh
-real(dp), dimension(nz), intent(in) :: uwind, vwind
+real(dp), dimension(nz), intent(in) :: uwind, vwind, theta
 integer, intent(in) :: model_v
 ! output
-real(dp), dimension(nz), intent(out) :: K_m ! Turbulent diffusion coefficient array [m^2/s]
+real(dp), dimension(nz), intent(out) :: K_m, K_h ! Turbulent diffusion coefficient array [m^2/s]
 ! constants
 real, parameter :: k = 0.4 ! von Kármán constant
 real, parameter :: lambda = 300.0  ! Mixing length scale [m]
@@ -452,29 +458,76 @@ real, parameter :: lambda = 300.0  ! Mixing length scale [m]
 integer :: hh_index
 real(dp) :: L ! Blackadar mixing length
 real(dp) :: du_dz, dv_dz, windshear
+! variables for model version 3
+real(dp) :: Ri ! Richardson nr
+real(dp) :: f_m, f_h ! Dyer-Businger forms
+real(dp), parameter :: grav = 9.81_dp ! [m s-2], gravitation
+real(dp) :: a1
 
 ! Model version 1
 IF (model_v == 1) THEN
-  K_m = 5_dp ! [m^2/s]
+  K_m = 5.0_dp ! [m^2/s]
 
 ! Model version 2
 ELSE IF (model_v == 2) THEN
   ! Calculate K_m for every altitude, except for boundary conditions
   DO hh_index = 2, size(hh) - 1
     ! Compute mixing length l
-    L = k * hh(hh_index) / (1.0 + (k * hh(hh_index) / lambda))
+    L = k * hh(hh_index) / (1.0_dp + (k * hh(hh_index) / lambda))
     ! Calculate velocity changes with altitude
     du_dz = (uwind(hh_index+1) - uwind(hh_index)) / (hh(hh_index+1) - hh(hh_index))
     dv_dz = (vwind(hh_index+1) - vwind(hh_index)) / (hh(hh_index+1) - hh(hh_index))
     ! Calculate windshear and K_m
-    windshear = sqrt(du_dz**2 + dv_dz**2)
-    K_m(hh_index) = L**2 * windshear
+    windshear = sqrt((du_dz**2.0_dp) + (dv_dz**2.0_dp))
+    K_m(hh_index) = L**2.0_dp * windshear
   END DO
-  ! Handle boundaries
+  ! Set boundaries
   K_m(1) = K_m(2)
   K_m(nz) = K_m(nz-1)
 
 !Model version 3
+ELSE IF (model_v == 3) THEN
+  ! Calculate K_m at every altitude for uwind and vwind and K_h for theta
+  DO hh_index = 2, size(hh) - 1
+    ! Calculate Richardson nr
+    Ri = grav / ((theta(hh_index+1) + theta(hh_index)) / 2.0_dp) * &
+        ((theta(hh_index+1) - theta(hh_index)) / &
+        ((uwind(hh_index+1) - uwind(hh_index))**2.0_dp + &
+        (vwind(hh_index+1) - vwind(hh_index))**2.0_dp)) * &
+        (hh(hh_index+1) - hh(hh_index))
+    
+    ! Calculate Dyer-Businger form
+    ! Unstable conditions
+    IF (Ri < 0.0_dp) THEN
+      f_m = (1.0_dp - 16.0_dp*Ri)**(0.5_dp)
+      f_h = (1.0_dp - 16.0_dp*Ri)**(0.75_dp)
+    ELSE IF (Ri >= 0.0_dp .AND. Ri < 0.2_dp) THEN
+      a1 = (1.0_dp - 5.0_dp*Ri)**2.0_dp
+      f_m = max(a1, 0.1_dp)
+      f_h = max(a1, 0.1_dp)
+    ! Very stable
+    ELSE IF (Ri > 0.2_dp) THEN
+      f_m = 0.1_dp
+      f_h = 0.1_dp
+    END IF
+
+    ! Compute mixing length l
+    L = k * hh(hh_index) / (1.0_dp + (k * hh(hh_index) / lambda))
+    ! Calculate velocity changes with altitude
+    du_dz = (uwind(hh_index+1) - uwind(hh_index)) / (hh(hh_index+1) - hh(hh_index))
+    dv_dz = (vwind(hh_index+1) - vwind(hh_index)) / (hh(hh_index+1) - hh(hh_index))
+    ! Calculate windshear
+    windshear = sqrt(du_dz**2.0_dp + dv_dz**2.0_dp)
+    ! Calculate K_m and K_h
+    K_m(hh_index) = L**2.0_dp * windshear * f_m
+    K_h(hh_index) = L**2.0_dp * windshear * f_h
+  END DO
+  ! Set boundaries
+  K_m(1) = K_m(2)
+  K_m(nz) = K_m(nz-1)
+  K_h(1) = K_h(2)
+  K_h(nz) = K_h(nz-1)
+
 END IF
 
 end subroutine get_K
