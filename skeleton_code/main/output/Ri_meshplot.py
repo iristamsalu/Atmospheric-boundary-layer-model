@@ -3,13 +3,18 @@ import numpy as np
 import matplotlib.colors as mcolors
 
 # Load data
-height = np.loadtxt('hh.dat')       # Height levels
-time   = np.loadtxt('time.dat')     # Time steps
-Ri     = np.loadtxt('Ri.dat')       # Ri values
+height = np.loadtxt('hh.dat')       # 50 height levels
+height = height.reshape(-1) 
 
-# Ensure correct shape
-if Ri.shape[1] != len(height):
-    Ri = Ri.T  # Transpose if necessary
+time   = np.loadtxt('time.dat')     # Time steps
+
+Ri     = np.loadtxt('Ri.dat')       # Ri values (only for 49 altidudes)
+Ri = np.hstack([Ri, Ri[:, -1:]])    # Duplicate last column
+
+
+print("Height shape:", height.shape)  # Should be (50,)
+print("Time shape:", time.shape)      # Should be (121,)
+print("Ri shape:", Ri.shape)          # Should be (50, 121) (altitude x time)
 
 # Replace NaNs and clip extreme values
 Ri = np.nan_to_num(Ri, nan=0.0)

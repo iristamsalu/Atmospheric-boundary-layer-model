@@ -5,8 +5,11 @@ import matplotlib.colors as mcolors
 # Load data
 height = np.loadtxt('hh.dat'  )  # Array of height levels (should have size 50)
 time   = np.loadtxt('time.dat')  # Array of time steps
-Km     = np.loadtxt('Kh.dat'  )  # K_m array with dimensions (n_time_steps, n_height_levels)
+Km     = np.loadtxt('Km.dat'  )  # K_m array with dimensions (n_time_steps, n_height_levels)
+Km     = np.hstack([Km, Km[:, -1:]])    # Duplicate last column
+
 Kh     = np.loadtxt('Kh.dat'  )  # K_h array with dimensions (n_time_steps, n_height_levels)
+Kh     = np.hstack([Kh, Kh[:, -1:]])    # Duplicate last column
 
 # ensure data is transposed correctly
 if Km.shape[1] != len(height):

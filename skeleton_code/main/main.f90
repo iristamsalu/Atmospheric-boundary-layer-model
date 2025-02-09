@@ -12,7 +12,6 @@
 !+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 
 program main
-
 implicit none
 
 !-----------------------------------------------------------------------------------------
@@ -24,6 +23,7 @@ logical :: use_deposition = .false.
 logical :: use_aerosol    = .true.
 character(len=255), parameter :: input_dir  = './input'
 character(len=255), parameter :: output_dir = './output'
+integer :: model_v = 3   ! Model version (1, 2 or 3) for meteorology
 
 !-----------------------------------------------------------------------------------------
 ! Constants
@@ -101,19 +101,26 @@ integer :: counter  ! [-], counter of time steps
 !-----------------------------------------------------------------------------------------
 ! Meteorology variables
 !-----------------------------------------------------------------------------------------
-real(dp), dimension(nz  ) :: uwind, &  ! [m s-1], u component of wind
-                             vwind, &  ! [m s-1], v component of wind
-                             theta     ! [K], potential temperature
+real(dp), dimension(nz  ) :: uwind, &     ! [m s-1], u component of wind
+                             vwind, &     ! [m s-1], v component of wind
+                             theta        ! [K], potential temperature 
+real(dp), dimension(nz  ) :: uwind_new, &     ! [m s-1], u component of wind
+                             vwind_new, &     ! [m s-1], v component of wind
+                             theta_new        ! [K], potential temperature 
+                             
 real(dp), dimension(nz  ) :: temp, &   ! [K], air temperature
                              pres      ! [Pa], air pressure
+                
+real(dp), dimension(nz-1) :: K_m       ! [m^2/s], turbulent diffusion coefficient
+real(dp), dimension(nz-1) :: K_h       ! [m^2/s], turbulent diffusion coefficient
+real(dp), dimension(nz-1) :: Ri_a      ! Array with Richardson nr-s, for testing
 
-! added 21.01.25 by iris                             
-real(dp), dimension(nz) :: K_m       ! [m^2/s], turbulent diffusion coefficient
-real(dp), dimension(nz) :: K_h       ! [m^2/s], turbulent diffusion coefficient
-! added 29.01.25 by iris
-real(dp), dimension(nz) :: Ri_a      ! Array with Richardson nr-s, for testing
-! added 27.01.25 by iris
-integer :: model_v = 3               ! Model version (1, 2 or 3) based on the K calculation
+!-----------------------------------------------------------------------------------------
+! Emission variables
+!-----------------------------------------------------------------------------------------
+real(dp) :: F_veg_isoprene, & ! Isoprene emission rate
+            F_veg_monoterpene ! Monoterpene emission rate
+real(dp) :: exp_coszen
 
 integer :: i, j  ! used for loops
 
@@ -127,7 +134,8 @@ call meteorology_init()          ! initialize meteorology
 
 call open_files()        ! open output files
 call write_files(time)   ! write initial values
-
+! F_veg_isoprene = 0.0_dp 
+! F_veg_monoterpene = 0.0_dp
 
 !-----------------------------------------------------------------------------------------
 ! Start main loop
@@ -137,34 +145,39 @@ DO WHILE (time <= time_end)
   !---------------------------------------------------------------------------------------
   ! Meteorology
   !---------------------------------------------------------------------------------------
+    ! Compute K_m for the current time step based on current wind profiles
+  call get_K(model_v, hh, uwind, vwind, theta, K_m, K_h, Ri_a)
   ! Set lower boundary condition
   call surface_values(theta(1), time+dt)  ! theta = temperature at the surface
-  ! Compute K_m for the current time step based on current wind profiles
-  call get_K(model_v, hh, uwind, vwind, theta, K_m, K_h, Ri_a)
 
   ! Update meteorology
-
   DO hh_index = 2, size(hh) - 1
     ! Update uwind
-    uwind(hh_index) = uwind(hh_index) + dt * ( &
+
+    uwind_new(hh_index) = uwind(hh_index) + dt * ( &
                      fcor * (vwind(hh_index) - vg) + &
-                     (K_m(hh_index+1) * (uwind(hh_index+1) - uwind(hh_index)) / (hh(hh_index+1) - hh(hh_index)) - &
-                     K_m(hh_index) * (uwind(hh_index) - uwind(hh_index-1)) / (hh(hh_index) - hh(hh_index-1))) / &
-                     ((hh(hh_index+1) - hh(hh_index-1)) / 2.0))
-
-    ! Update vwind
-    vwind(hh_index) = vwind(hh_index) + dt * ( &
-                     -fcor * (uwind(hh_index) - ug) + &
-                     (K_m(hh_index+1) * (vwind(hh_index+1) - vwind(hh_index)) / (hh(hh_index+1) - hh(hh_index)) - &
-                     K_m(hh_index) * (vwind(hh_index) - vwind(hh_index-1)) / (hh(hh_index) - hh(hh_index-1))) / &
-                     ((hh(hh_index+1) - hh(hh_index-1)) / 2.0))
-
-    ! Update potential temperature
-    theta(hh_index) = theta(hh_index) + dt * ( &
-                     K_h(hh_index+1) * (theta(hh_index+1) - theta(hh_index)) / (hh(hh_index+1) - hh(hh_index)) - &
-                     K_h(hh_index) * (theta(hh_index) - theta(hh_index-1)) / (hh(hh_index) - hh(hh_index-1))) / &
-                     ((hh(hh_index+1) - hh(hh_index-1)) / 2.0)                 
+                     (K_m(hh_index) * (uwind(hh_index+1) - uwind(hh_index)) / (hh(hh_index+1) - hh(hh_index)) - &
+                     K_m(hh_index-1) * (uwind(hh_index) - uwind(hh_index-1)) / (hh(hh_index) - hh(hh_index-1))) / &
+                     ((hh(hh_index+1) - hh(hh_index-1)) / 2.0_dp))
   END DO
+    ! Update vwind
+  DO hh_index = 2, size(hh) - 1
+    vwind_new(hh_index) = vwind(hh_index) + dt * ( &
+                     -fcor * (uwind(hh_index) - ug) + &
+                     (K_m(hh_index) * (vwind(hh_index+1) - vwind(hh_index)) / (hh(hh_index+1) - hh(hh_index)) - &
+                     K_m(hh_index-1) * (vwind(hh_index) - vwind(hh_index-1)) / (hh(hh_index) - hh(hh_index-1))) / &
+                     ((hh(hh_index+1) - hh(hh_index-1)) / 2.0_dp))
+  END DO
+  
+  DO hh_index = 2, size(hh) - 1
+    theta_new(hh_index) = theta(hh_index) + dt * ( &
+                     K_h(hh_index) * (theta(hh_index+1) - theta(hh_index)) / (hh(hh_index+1) - hh(hh_index)) - &
+                     K_h(hh_index-1) * (theta(hh_index) - theta(hh_index-1)) / (hh(hh_index) - hh(hh_index-1))) / &
+                     ((hh(hh_index+1) - hh(hh_index-1)) / 2.0_dp)                 
+  END DO
+  uwind(2:nz-1)=uwind_new(2:nz-1)
+  vwind(2:nz-1)=vwind_new(2:nz-1)
+  theta(2:nz-1)=theta_new(2:nz-1)
   !---------------------------------------------------------------------------------------
   ! Emission
   !---------------------------------------------------------------------------------------
@@ -173,6 +186,9 @@ DO WHILE (time <= time_end)
   if ( use_emission .and. time >= time_start_emission ) then
     if ( mod( nint((time - time_start_emission)*1000.0d0), nint(dt_emis*1000.0d0) ) == 0 ) then
       ! Calculate emission rates
+      exp_coszen = get_exp_coszen(time, daynumber, latitude)
+      call get_emissions(exp_coszen, temp(2), Rgas, F_veg_isoprene, F_veg_monoterpene)
+      write(16, *) time, F_veg_isoprene, F_veg_monoterpene
     end if
   end if
 
@@ -266,7 +282,6 @@ write(*,*) counter,'time steps'
 
 contains
 
-
 !-----------------------------------------------------------------------------------------
 ! subroutine open_files()
 !
@@ -291,6 +306,7 @@ subroutine open_files()
   open(13,file=trim(adjustl(output_dir))//'/Km.dat'   ,status='replace',action='write')
   open(14,file=trim(adjustl(output_dir))//'/Kh.dat'   ,status='replace',action='write')
   open(15,file=trim(adjustl(output_dir))//'/Ri.dat'   ,status='replace',action='write')
+  open(16,file=trim(adjustl(output_dir))//'/Emissions.dat'   ,status='replace',action='write')
 end subroutine open_files
 
 
@@ -322,6 +338,7 @@ subroutine write_files(time)
   write(13, outfmt_level     ) K_m
   write(14, outfmt_level     ) K_h
   write(15, outfmt_level     ) Ri_a
+
 end subroutine write_files
 
 
@@ -339,6 +356,7 @@ subroutine close_files()
   close(13)
   close(14)
   close(15)
+  close(16)
 end subroutine close_files
 
 
@@ -455,8 +473,8 @@ real(dp), dimension(nz), intent(in)  :: hh
 real(dp), dimension(nz), intent(in)  :: uwind, vwind, theta
 integer, intent(in)                  :: model_v
 ! output
-real(dp), dimension(nz), intent(out) :: K_m, K_h  ! turbulent diffusion coefficient array [m^2/s]
-real(dp), dimension(nz), intent(out) :: Ri_a  ! array of Richardson nr for testing the meteorology 
+real(dp), dimension(nz-1), intent(out) :: K_m, K_h  ! turbulent diffusion coefficient array [m^2/s]
+real(dp), dimension(nz-1), intent(out) :: Ri_a  ! array of Richardson nr for testing the meteorology 
 ! constants
 real(dp), parameter                  :: k = 0.4_dp  ! von Kármán constant
 real(dp), parameter                  :: lambda = 300.0_dp    ! mixing length scale [m]
@@ -466,9 +484,8 @@ integer                              :: hh_index
 real(dp)                             :: L   ! Blackadar mixing length
 real(dp)                             :: du_dz, dv_dz, windshear
 real(dp)                             :: Ri    ! Richardson nr
-real(dp)                             :: f_m, f_h    ! Dyer-Businger forms
-real(dp)                             :: a1
-real(dp)                             :: denom, theta_smoothed
+real(dp)                             :: f_m, f_h  ! Dyer-Businger forms
+real(dp)                             :: a1, denom
 
 ! Model version 1
 IF (model_v == 1) THEN
@@ -478,9 +495,12 @@ IF (model_v == 1) THEN
 ! Model version 2
 ELSE IF (model_v == 2) THEN
   ! Calculate K_m for every altitude, except for boundary conditions
-  DO hh_index = 2, size(hh) - 1
+  DO hh_index = 1, size(hh) - 1
     ! Compute mixing length l
-    L = k * hh(hh_index) / (1.0_dp + (k * hh(hh_index) / lambda))
+    
+    ! L = k * hh(hh_index) / (1.0_dp + (k * hh(hh_index) / lambda))
+    ! eddies are also at model midpoint levels 
+    L = k * (hh(hh_index+1)+hh(hh_index))*0.5d0 / (1.0_dp + (k * (hh(hh_index+1)+hh(hh_index))*0.5d0 / lambda))
     ! Calculate velocity changes with altitude
     du_dz = (uwind(hh_index+1) - uwind(hh_index)) / (hh(hh_index+1) - hh(hh_index))
     dv_dz = (vwind(hh_index+1) - vwind(hh_index)) / (hh(hh_index+1) - hh(hh_index))
@@ -488,66 +508,121 @@ ELSE IF (model_v == 2) THEN
     windshear = sqrt((du_dz**2.0_dp) + (dv_dz**2.0_dp))
     K_m(hh_index) = L**2.0_dp * windshear
   END DO
+  
   ! Set boundaries
-  K_m(1)  = 0.0_dp
-  K_m(nz) = K_m(nz-1)
+  ! K_m(nz) = K_m(nz-1)
+  ! K_m(1) = 0.0_dp
+  ! K_m(hh_index) = MAX(K_m(hh_index), 1.0d-6)  ! Avoid zero values
   K_h = K_m
 
 !Model version 3
 ELSE IF (model_v == 3) THEN
   ! calculate K_m at every altitude for uwind and vwind and K_h for theta
-  DO hh_index = 2, size(hh) - 1
+  DO hh_index = 1, size(hh) - 1
     ! calculate Richardson nr
-    Ri = grav / ((theta(hh_index+1)+theta(hh_index)) / 2.0_dp)*  &
-                ((theta(hh_index+1) - theta(hh_index))          /  &
-                ((uwind(hh_index+1) - uwind(hh_index))**2.0_dp  +  &
-                (vwind(hh_index+1) - vwind(hh_index))**2.0_dp)) *  &
+    denom = ((uwind(hh_index+1) - uwind(hh_index))**2.0_dp    +  &
+            (vwind(hh_index+1)  - vwind(hh_index))**2.0_dp)
+    Ri = grav / ((theta(hh_index+1) + theta(hh_index)) / 2.0_dp)  *  &
+                ((theta(hh_index+1) - theta(hh_index)) / denom)   *  &
                 (hh(hh_index+1) - hh(hh_index))
     
     ! calculate Dyer-Businger form
     ! unstable conditions
-    IF (Ri <= 0.0_dp) THEN
+    IF (Ri < 0.0_dp) THEN
       f_m = (1.0_dp - 16.0_dp*Ri)**(0.5_dp)
       f_h = (1.0_dp - 16.0_dp*Ri)**(0.75_dp)
     ! conditions?
-    ELSE IF (Ri > 0.0_dp .AND. Ri <= 0.2_dp) THEN
+    ELSE IF (Ri >= 0.0_dp .AND. Ri < 0.2_dp) THEN
       a1  = (1.0_dp - 5.0_dp*Ri)**2.0_dp
       f_m = max(a1, 0.1_dp)
       f_h = max(a1, 0.1_dp)
     ! very stable conditions
-    ELSE IF (Ri > 0.2_dp) THEN
+    ELSE IF (Ri >= 0.2_dp) THEN
       f_m = 0.1_dp
       f_h = 0.1_dp
-    ! ELSE IF (Ri < -0.0625_dp) THEN
-    !   f_m = 0.0_dp
-    !   f_h = 0.0_dp
+ 
     END IF
 
     ! Compute mixing length l
-    L = k * hh(hh_index) / (1.0_dp + (k * hh(hh_index) / lambda))
+    ! L = k * hh(hh_index) / (1.0_dp + (k * hh(hh_index) / lambda))
+    L = k * (hh(hh_index+1)+hh(hh_index))*0.5d0 / (1.0_dp + (k * (hh(hh_index+1)+hh(hh_index))*0.5d0 / lambda))
     ! Calculate velocity changes with altitude
     du_dz = (uwind(hh_index+1) - uwind(hh_index)) / (hh(hh_index+1) - hh(hh_index))
     dv_dz = (vwind(hh_index+1) - vwind(hh_index)) / (hh(hh_index+1) - hh(hh_index))
     ! Calculate windshear
-    windshear = sqrt((du_dz**2.0_dp) + (dv_dz**2.0_dp))
+    windshear = sqrt(MAX(0.0_dp, (du_dz**2.0_dp) + (dv_dz**2.0_dp)))
     ! calculate K_m and K_h
-    K_m(hh_index) = L**2.0_dp * windshear * f_m
-    K_h(hh_index) = L**2.0_dp * windshear * f_h
+    K_m(hh_index) = (L**2.0_dp) * windshear * f_m
+    K_h(hh_index) = (L**2.0_dp) * windshear * f_h
+    ! K_m(hh_index) = MAX(K_m(hh_index), 1.0d-6)  ! Avoid zero values
+    ! K_h(hh_index) = MAX(K_h(hh_index), 1.0d-6)  ! Avoid zero values
     ! append Richardson nr to an array - for testing
     Ri_a(hh_index) = Ri
   END DO
   ! Set boundaries
-  K_m(1)  = 0
-  K_m(nz) = K_m(nz-1)
-  K_h(1)  = 0
-  K_h(nz) = K_h(nz-1)
+  ! K_m(1)  = 0.0_dp
+  ! K_m(nz) = K_m(nz-1)
+  ! K_h(1)  = 0.0_dp
+  ! K_h(nz) = K_h(nz-1)
   ! Set boundaries for Richardson array
-  Ri_a(1)  = Ri_a(2)
-  Ri_a(nz) = Ri_a(nz-1)
+  ! Ri_a(1)  = Ri_a(2)
+  ! Ri_a(nz) = Ri_a(nz-1)
 
 END IF
 
 end subroutine get_K
+
+!-----------------------------------------------------------------------------------------
+! Get emissions
+!-----------------------------------------------------------------------------------------
+subroutine get_emissions(exp_coszen, temp, Rgas, F_veg_isoprene, F_veg_monoterpene)
+
+real(dp), intent(in)                 :: Rgas, exp_coszen, temp
+real(dp), intent(out)                :: F_veg_isoprene, &     ! Surface emission flux for isoprene
+                                        F_veg_monoterpene     ! Surface emission flux for isoprene
+real(dp)                             :: gamma_isoprene,    &  ! adjustment factor dependent on T and light emission activity
+                                        gamma_monoterpene, &  ! adjustment factor dependent on T and light emission activity 
+                                        C_L,               &  
+                                        C_T,               &
+                                        PAR            
+real(dp), parameter                  :: D_m = 0.0538_dp,    & ! Foliar density [g cm^-2]
+                                        eeta = 100.0_dp,    & ! ecosystem dependent emission factor [ng g^-1 h^-1]
+                                        delta = 1.0_dp,     & ! emission activity factor for long term controls
+                                        alpha = 0.0027_dp,  & ! 
+                                        c_L1 = 1.006_dp,    &
+                                        c_T1 = 95.0_dp,     & ! [kJ mol^-1]
+                                        c_T2 = 230.0_dp,    & ! [kJ mol^-1]
+                                        T_s = 303.15_dp,    & ! [K]
+                                        T_m = 314.0_dp,     & ! [K]
+                                        beeta = 0.09_dp       ! K^-1
+real(dp), parameter                  :: M_isoprene = 68.12_dp, &  ! g/mol
+                                        M_monoterpene = 136.23_dp  ! g/mol
+real(dp)                             :: height = 1000.0_dp  ! height (cm)
+                                        
+PAR = 1000.0_dp * exp_coszen
+C_L = alpha * c_L1 * PAR / sqrt(1.0_dp + alpha**2.0_dp * PAR**2.0_dp)
+C_T = exp(c_T1 * (temp - T_s) / (Rgas * temp * T_s)) / (1.0_dp + exp(c_T2*(temp - T_m)/ (Rgas*temp*T_s)))
+
+! isoprene emissions at 5-15m
+gamma_isoprene = C_L * C_T
+F_veg_isoprene = D_m * eeta * gamma_isoprene * delta
+
+! monoterpene emissions at 5-15m
+gamma_monoterpene = exp(beeta * (temp - T_s))
+F_veg_monoterpene = D_m * eeta * gamma_monoterpene * delta
+
+! Make sure F_veg is in correct units
+! Convert from ng g⁻¹ h⁻¹ to ng g⁻¹ s⁻¹
+F_veg_isoprene = F_veg_isoprene / 3600.0_dp
+F_veg_monoterpene = F_veg_monoterpene / 3600.0_dp
+! Convert ng to molecules
+F_veg_isoprene = F_veg_isoprene * (1.0_dp / 10.0_dp**9) * (1.0_dp / M_isoprene) * 6.022e23_dp
+F_veg_monoterpene = F_veg_monoterpene * (1.0_dp / 10.0_dp**9) * (1.0_dp / M_monoterpene) * 6.022e23_dp
+! Convert from molecules per cm² per s to molecules per cm³ per s
+F_veg_isoprene = F_veg_isoprene / height
+F_veg_monoterpene = F_veg_monoterpene / height
+
+end subroutine get_emissions
 
 
 
