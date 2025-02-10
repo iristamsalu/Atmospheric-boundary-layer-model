@@ -103,7 +103,7 @@ integer :: counter  ! [-], counter of time steps
 !-----------------------------------------------------------------------------------------
 real(dp), dimension(nz  ) :: uwind, &     ! [m s-1], u component of wind
                              vwind, &     ! [m s-1], v component of wind
-                             theta        ! [K], potential temperature 
+                             theta        ! [K], potential temperature
 real(dp), dimension(nz  ) :: uwind_new, &     ! [m s-1], u component of wind
                              vwind_new, &     ! [m s-1], v component of wind
                              theta_new        ! [K], potential temperature 
@@ -120,7 +120,8 @@ real(dp), dimension(nz-1) :: Ri_a      ! Array with Richardson nr-s, for testing
 !-----------------------------------------------------------------------------------------
 real(dp) :: F_veg_isoprene, & ! Isoprene emission rate
             F_veg_monoterpene ! Monoterpene emission rate
-real(dp) :: exp_coszen
+real(dp) :: exp_coszen, & 
+            temp_emission
 
 integer :: i, j  ! used for loops
 
@@ -134,8 +135,8 @@ call meteorology_init()          ! initialize meteorology
 
 call open_files()        ! open output files
 call write_files(time)   ! write initial values
-! F_veg_isoprene = 0.0_dp 
-! F_veg_monoterpene = 0.0_dp
+F_veg_isoprene = 0.0_dp 
+F_veg_monoterpene = 0.0_dp
 
 !-----------------------------------------------------------------------------------------
 ! Start main loop
@@ -148,7 +149,7 @@ DO WHILE (time <= time_end)
     ! Compute K_m for the current time step based on current wind profiles
   call get_K(model_v, hh, uwind, vwind, theta, K_m, K_h, Ri_a)
   ! Set lower boundary condition
-  call surface_values(theta(1), time+dt)  ! theta = temperature at the surface
+  call surface_values(theta(1), time+dt)
 
   ! Update meteorology
   DO hh_index = 2, size(hh) - 1
@@ -187,8 +188,8 @@ DO WHILE (time <= time_end)
     if ( mod( nint((time - time_start_emission)*1000.0d0), nint(dt_emis*1000.0d0) ) == 0 ) then
       ! Calculate emission rates
       exp_coszen = get_exp_coszen(time, daynumber, latitude)
-      call get_emissions(exp_coszen, temp(2), Rgas, F_veg_isoprene, F_veg_monoterpene)
-      write(16, *) time, F_veg_isoprene, F_veg_monoterpene
+      temp_emission = theta(2) - (grav/Cp)*10.0_dp
+      call get_emissions(exp_coszen, temp_emission, F_veg_isoprene, F_veg_monoterpene)
     end if
   end if
 
@@ -259,6 +260,9 @@ DO WHILE (time <= time_end)
   !---------------------------------------------------------------------------------------
   ! Advance to next time step
   time = time + dt
+  if ( mod( nint((time - time_start)*1000.0d0), nint(24*3600*1000.0d0) ) == 0) then
+    daynumber = daynumber + 1
+  end if
 
   ! Write data every dt_output [s]
   if ( mod( nint((time - time_start)*1000.0d0), nint(dt_output*1000.0d0) ) == 0 ) then
@@ -338,6 +342,7 @@ subroutine write_files(time)
   write(13, outfmt_level     ) K_m
   write(14, outfmt_level     ) K_h
   write(15, outfmt_level     ) Ri_a
+  write(16, *) time, F_veg_isoprene, F_veg_monoterpene, daynumber, exp_coszen
 
 end subroutine write_files
 
@@ -575,9 +580,9 @@ end subroutine get_K
 !-----------------------------------------------------------------------------------------
 ! Get emissions
 !-----------------------------------------------------------------------------------------
-subroutine get_emissions(exp_coszen, temp, Rgas, F_veg_isoprene, F_veg_monoterpene)
+subroutine get_emissions(exp_coszen, temp, F_veg_isoprene, F_veg_monoterpene)
 
-real(dp), intent(in)                 :: Rgas, exp_coszen, temp
+real(dp), intent(in)                 :: exp_coszen, temp
 real(dp), intent(out)                :: F_veg_isoprene, &     ! Surface emission flux for isoprene
                                         F_veg_monoterpene     ! Surface emission flux for isoprene
 real(dp)                             :: gamma_isoprene,    &  ! adjustment factor dependent on T and light emission activity
@@ -590,15 +595,15 @@ real(dp), parameter                  :: D_m = 0.0538_dp,    & ! Foliar density [
                                         delta = 1.0_dp,     & ! emission activity factor for long term controls
                                         alpha = 0.0027_dp,  & ! 
                                         c_L1 = 1.006_dp,    &
-                                        c_T1 = 95.0_dp,     & ! [kJ mol^-1]
-                                        c_T2 = 230.0_dp,    & ! [kJ mol^-1]
+                                        c_T1 = 95.0e3_dp,     & ! [kJ mol^-1]
+                                        c_T2 = 230.0e3_dp,    & ! [kJ mol^-1]
                                         T_s = 303.15_dp,    & ! [K]
                                         T_m = 314.0_dp,     & ! [K]
                                         beeta = 0.09_dp       ! K^-1
 real(dp), parameter                  :: M_isoprene = 68.12_dp, &  ! g/mol
                                         M_monoterpene = 136.23_dp  ! g/mol
 real(dp)                             :: height = 1000.0_dp  ! height (cm)
-                                        
+           
 PAR = 1000.0_dp * exp_coszen
 C_L = alpha * c_L1 * PAR / sqrt(1.0_dp + alpha**2.0_dp * PAR**2.0_dp)
 C_T = exp(c_T1 * (temp - T_s) / (Rgas * temp * T_s)) / (1.0_dp + exp(c_T2*(temp - T_m)/ (Rgas*temp*T_s)))
@@ -612,14 +617,14 @@ gamma_monoterpene = exp(beeta * (temp - T_s))
 F_veg_monoterpene = D_m * eeta * gamma_monoterpene * delta
 
 ! Make sure F_veg is in correct units
-! Convert from ng g⁻¹ h⁻¹ to ng g⁻¹ s⁻¹
+! Convert from ng cm**-2 h**-1 to ng cm**-2 s⁻¹
 F_veg_isoprene = F_veg_isoprene / 3600.0_dp
 F_veg_monoterpene = F_veg_monoterpene / 3600.0_dp
 ! Convert ng to molecules
-F_veg_isoprene = F_veg_isoprene * (1.0_dp / 10.0_dp**9) * (1.0_dp / M_isoprene) * 6.022e23_dp
-F_veg_monoterpene = F_veg_monoterpene * (1.0_dp / 10.0_dp**9) * (1.0_dp / M_monoterpene) * 6.022e23_dp
+F_veg_isoprene = F_veg_isoprene * (1.0_dp / 10.0_dp**9) * (1.0_dp / M_isoprene) * NA
+F_veg_monoterpene = F_veg_monoterpene * (1.0_dp / 10.0_dp**9) * (1.0_dp / M_monoterpene) * NA
 ! Convert from molecules per cm² per s to molecules per cm³ per s
-F_veg_isoprene = F_veg_isoprene / height
+F_veg_isoprene = F_veg_isoprene / height 
 F_veg_monoterpene = F_veg_monoterpene / height
 
 end subroutine get_emissions
