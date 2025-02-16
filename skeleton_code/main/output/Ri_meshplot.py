@@ -11,11 +11,6 @@ time   = np.loadtxt('time.dat')     # Time steps
 Ri     = np.loadtxt('Ri.dat')       # Ri values (only for 49 altidudes)
 Ri = np.hstack([Ri, Ri[:, -1:]])    # Duplicate last column
 
-
-print("Height shape:", height.shape)  # Should be (50,)
-print("Time shape:", time.shape)      # Should be (121,)
-print("Ri shape:", Ri.shape)          # Should be (50, 121) (altitude x time)
-
 # Replace NaNs and clip extreme values
 Ri = np.nan_to_num(Ri, nan=0.0)
 Ri = np.clip(Ri, -1, 40000)  # Adjust range to expected physical values

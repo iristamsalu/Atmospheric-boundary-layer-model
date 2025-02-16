@@ -9,5 +9,7 @@ f_veg_mono = data[:, 2]
 
 p.figure(figsize=(8, 8))
 p.plot(time, f_veg_iso)
+p.plot(time, f_veg_mono)
 p.xlim(3.0, 5.0)
-p.savefig('Emissions_plot')
+p.ylim(0)
+p.savefig('Emissions.png')
