@@ -182,7 +182,8 @@ subroutine f_lsode(neq, time, conc, conc_dot)
   conc_dot(16) = k_rate(15)*conc(8)**2.0_dp - k_rate(21)*conc(3)*conc(16)
 
   ! 17 = HNO3
-  conc_dot(17) = k_rate(18)*conc(3)*conc(5) + 2*k_rate(26)*conc(19)*H2O + 2*k_rate(27)*conc(19)*H2O**2.0_dp
+  conc_dot(17) = k_rate(18)*conc(3)*conc(5) + 2*k_rate(26)*conc(19)*H2O + 2*k_rate(27)*conc(19)*H2O**2.0_dp &
+                 - k_rate(30)*conc(17)
 
   ! 18 = NO3
   conc_dot(18) = k_rate(23)*conc(5)*conc(1) + k_rate(25)*conc(19) - k_rate(22)*conc(6)*conc(18) &
