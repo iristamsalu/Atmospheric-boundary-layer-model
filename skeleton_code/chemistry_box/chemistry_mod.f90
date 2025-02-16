@@ -131,7 +131,11 @@ subroutine f_lsode(neq, time, conc, conc_dot)
   conc_dot(2)  = k_rate(1)*conc(1) - k_rate(2)*conc(2)*H2O - k_rate(3)*conc(2)*N2 - k_rate(4)*conc(2)*O2
 
   ! 3 = OH
-  !conc_dot(3)  = ???
+  conc_dot(3)  = 2*k_rate(2)*conc(2)*H2O + k_rate(11)*conc(8)*conc(6) + k_rate(28)*conc(8)*conc(1)        &
+                 - k_rate(7)*conc(9)*conc(3) - k_rate(8)*conc(11)*conc(3) - k_rate(9)*conc(13)*conc(3)    &
+                 - k_rate(10)*conc(15)*conc(3) - k_rate(14)*conc(7)*conc(3) - k_rate(18)*conc(5)*conc(3)  &
+                 - k_rate(20)*conc(8)*conc(3) - k_rate(21)*conc(16)*conc(3) - k_rate(29)*conc(20)*conc(3) &
+                 - k_rate(33)*conc(23)*conc(3)
 
   ! 4 = REST
   conc_dot(4)  = 0.0d0
