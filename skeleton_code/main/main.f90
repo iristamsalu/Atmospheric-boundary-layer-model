@@ -12,6 +12,7 @@
 !+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 
 program main
+use chemistry_mod
 implicit none
 
 !-----------------------------------------------------------------------------------------
@@ -45,6 +46,7 @@ real(dp), parameter :: nu_air = 1.59e-5_dp                      ! [m2 s-1], kine
 real(dp), parameter :: Omega  = 2*PI/(24.0_dp*60.0_dp*60.0_dp)  ! [rad s-1], Earth angular speed
 real(dp), parameter :: lambda = 300.0_dp                        ! maximum mixing length, meters
 real(dp), parameter :: vonk   = 0.4_dp                          ! von Karman constant, dimensionless
+real(dp), parameter :: ppb = 1e-9_dp
 
 real(dp), parameter :: ug = 10.0d0, vg = 0.0d0  ! [m s-1], geostrophic wind
 
@@ -106,7 +108,7 @@ real(dp), dimension(nz  ) :: uwind, &     ! [m s-1], u component of wind
                              theta        ! [K], potential temperature
 real(dp), dimension(nz  ) :: uwind_new, &     ! [m s-1], u component of wind
                              vwind_new, &     ! [m s-1], v component of wind
-                             theta_new        ! [K], potential temperature 
+                             theta_new        ! [K], potential temperature    
                              
 real(dp), dimension(nz  ) :: temp, &   ! [K], air temperature
                              pres      ! [Pa], air pressure
@@ -120,10 +122,20 @@ real(dp), dimension(nz-1) :: Ri_a      ! Array with Richardson nr-s, for testing
 !-----------------------------------------------------------------------------------------
 real(dp) :: F_veg_isoprene, & ! Isoprene emission rate
             F_veg_monoterpene ! Monoterpene emission rate
+real(dp), dimension(nz-1) :: F_veg_isoprene_list, &
+                             F_veg_monoterpene_list
 real(dp) :: exp_coszen, & 
             temp_emission
 
 integer :: i, j  ! used for loops
+
+!-----------------------------------------------------------------------------------------
+! chemistry variables
+!-----------------------------------------------------------------------------------------
+real(dp), dimension(neq, nz) :: conc, dconsdt
+real(dp), dimension(neq, nz) :: conc_new         ! [molecules / cm3], number concentration 
+real(dp) :: temp_chemistry
+real(dp) :: O2, N2, H2O, M
 
 
 !-----------------------------------------------------------------------------------------
@@ -190,11 +202,18 @@ DO WHILE (time <= time_end)
       exp_coszen = get_exp_coszen(time, daynumber, latitude)
       temp_emission = theta(2) - (grav/Cp)*10.0_dp
       call get_emissions(exp_coszen, temp_emission, F_veg_isoprene, F_veg_monoterpene)
+      F_veg_isoprene_list(2) = F_veg_isoprene
+      F_veg_monoterpene_list(2) = F_veg_monoterpene  
     end if
   end if
 
   if ( use_emission .and. (.not. use_chemistry) ) then
     ! Add emission to the number concentrations of compounds
+    ! Convert emissions from flux (molecules/cm2/s) to number concentration (molecules/cm3)
+    ! Update concentration for isoprene (C5H8)
+    conc(13,2) = conc(13,2) + (F_veg_isoprene * dt) / ((hh(3) - hh(2)) * 100.0_dp) 
+    ! Update concentration for monoterpenes (e.g., alpha-pinene)
+    conc(23,2) = conc(23,2) + (F_veg_monoterpene * dt) / ((hh(3) - hh(2)) * 100.0_dp)
   end if
 
   !---------------------------------------------------------------------------------------
@@ -217,7 +236,24 @@ DO WHILE (time <= time_end)
   ! Compute chemistry part every dt_chem, multiplying 1000 to convert s to ms to make mod easier
   if ( use_chemistry .and. time >= time_start_chemistry ) then
     if ( mod( nint((time - time_start_chemistry)*1000.0d0), nint(dt_chem*1000.0d0) ) == 0 ) then
+
       ! Solve chemical equations for each layer except boundaries
+      exp_coszen = get_exp_coszen(time, daynumber, latitude)
+      do hh_index=2, nz-1
+        temp_chemistry = theta(hh_index) - (grav/Cp)*10.0_dp
+        M = p00*NA / (Rgas*temp_chemistry) * 1d-6   ! Air molecules concentration [molecules/cm3]
+        O2   = 0.21d0*M                             ! Oxygen concentration [molecules/cm3]
+        N2   = 0.78d0*M                             ! Nitrogen concentration [molecules/cm3]
+        H2O  = 1.0D16                               ! Water molecules [molecules/cm3]
+        conc( 1, hh_index) = 24.0d0   * M * ppb     ! O3
+        conc( 5, hh_index) = 0.2d0    * M * ppb     ! NO2
+        conc( 6, hh_index) = 0.07d0   * M * ppb     ! NO
+        conc( 9, hh_index) = 100.0d0  * M * ppb     ! CO
+        conc(11, hh_index) = 1759.0d0 * M * ppb     ! CH4
+        conc(20, hh_index) = 0.5d0    * M * ppb     ! SO2
+
+        call chemistry_step(conc(1:neq, hh_index), time, time+dt, O2, N2, M, H2O, temp(hh_index), exp_coszen, F_veg_isoprene_list(hh_index), F_veg_monoterpene_list(hh_index)) 
+      end do
     end if  ! every dt_chem
   end if
 
@@ -225,11 +261,19 @@ DO WHILE (time <= time_end)
   ! Deposition should not be used alone because it calculates nothing in that case
   if (use_emission .or. use_chemistry) then
     ! Trick to make bottom flux zero
-
+    conc(1:neq,1) = conc(1:neq,2) ! concentration for layer 1 and layer 2 equal => no flux
+    conc(1:neq,nz) = 0.0_dp       ! concentration = 0 at the top layer
     ! Concentrations can not be lower than 0
-
     ! Mixing of chemical species
-
+    DO i=1, neq
+        DO hh_index = 2, size(hh) - 1
+          conc_new(i, hh_index) = conc(i, hh_index) + dt * ( &
+          K_h(hh_index) * (conc(i, hh_index+1) - conc(i, hh_index)) / (hh(hh_index+1) - hh(hh_index)) - &
+          K_h(hh_index-1) * (conc(i, hh_index) - conc(i, hh_index-1)) / (hh(hh_index) - hh(hh_index-1))) / &
+          ((hh(hh_index+1) - hh(hh_index-1)) / 2.0_dp)                 
+        END DO
+    END DO
+    conc = conc_new
     ! Set the constraints above again for output
   end if
 
@@ -311,6 +355,10 @@ subroutine open_files()
   open(14,file=trim(adjustl(output_dir))//'/Kh.dat'   ,status='replace',action='write')
   open(15,file=trim(adjustl(output_dir))//'/Ri.dat'   ,status='replace',action='write')
   open(16,file=trim(adjustl(output_dir))//'/Emissions.dat'   ,status='replace',action='write')
+  open(17,file=trim(adjustl(output_dir))//'/Concentrations_h10.dat', status='replace',action='write')
+  open(18,file=trim(adjustl(output_dir))//'/Concentrations_h50.dat', status='replace',action='write')
+  open(19,file=trim(adjustl(output_dir))//'/Concentrations_h500.dat', status='replace',action='write')
+  open(20,file=trim(adjustl(output_dir))//'/Concentrations_h2000.dat', status='replace',action='write')
 end subroutine open_files
 
 
@@ -343,6 +391,11 @@ subroutine write_files(time)
   write(14, outfmt_level     ) K_h
   write(15, outfmt_level     ) Ri_a
   write(16, *) time, F_veg_isoprene, F_veg_monoterpene, daynumber, exp_coszen
+  write(17, outfmt_level     ) conc(:,2)
+  write(18, outfmt_level     ) conc(:,6)
+  write(19, outfmt_level     ) conc(:,23)
+  write(20, outfmt_level     ) conc(:,40)
+
 
 end subroutine write_files
 
@@ -362,6 +415,10 @@ subroutine close_files()
   close(14)
   close(15)
   close(16)
+  close(17)
+  close(18)
+  close(19)
+  close(20)
 end subroutine close_files
 
 
