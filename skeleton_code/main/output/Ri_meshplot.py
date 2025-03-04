@@ -7,8 +7,9 @@ height = np.loadtxt('hh.dat')       # 50 height levels
 height = height.reshape(-1) 
 
 time   = np.loadtxt('time.dat')     # Time steps
+time   = time * 24 
 
-Ri     = np.loadtxt('Ri.dat')       # Ri values (only for 49 altidudes)
+Ri     = np.loadtxt('Ri_winter.dat')       # Ri values (only for 49 altidudes)
 Ri = np.hstack([Ri, Ri[:, -1:]])    # Duplicate last column
 
 # Replace NaNs and clip extreme values
@@ -19,8 +20,7 @@ Ri = np.clip(Ri, -1, 40000)  # Adjust range to expected physical values
 levels = np.array([-1, 0, 1, 10, 100, 200, 300, 40000])  # Adjust these based on dataset
 
 # Create a discretized 'viridis' colormap
-#cmap = p.get_cmap('viridis', len(levels) - 1)  # Discretize viridis into bins
-cmap = p.get_cmap('RdYlBu_r',  len(levels) - 1)
+cmap = p.get_cmap('viridis', len(levels) - 1)  # Discretize viridis into bins
 norm = mcolors.BoundaryNorm(levels, cmap.N)  # Ensure color boundaries match
 
 # Create the plot
@@ -29,9 +29,9 @@ c = ax.contourf(time, height, Ri.T, levels=levels, cmap=cmap, norm=norm)  # Disc
 
 # Add colorbar
 cb = p.colorbar(c, ax=ax, boundaries=levels, ticks=levels, label='Ri (-)')
-ax.set_xlabel('Time (day)')
-ax.set_ylabel('h (m)')
-ax.set_title('K3: Ri')
+ax.set_xlabel('Time (hours)')
+ax.set_ylabel('Altitude (m)')
+ax.set_title('SMEAR II 18.02.2011 \nRichardson number (Ri) with model v3')
 
 # Save and display
-p.savefig('Ri_meshplot_o.svg')
+p.savefig('Ri_winter.svg')

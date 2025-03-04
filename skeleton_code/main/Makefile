@@ -9,7 +9,6 @@ all: $(EXE)
 $(EXE): $(OBJS)
 	$(F90) $(FFLAGS) -o $@ $^
 
-# Ensure chemistry_mod.o is built before main.o
 main.o: chemistry_mod.o
 
 %.o: %.f90

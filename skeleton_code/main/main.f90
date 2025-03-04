@@ -72,8 +72,7 @@ real(dp), parameter, dimension(nz) :: &
           2100, 2200, 2300, 2400, 2500, 2600, 2700, 2800, 2900, 3000 /)
 
 real(dp), parameter :: hc = 10.0_dp  ! [m], canopy height
-! Added by me 26.01.2025, index for the height level array
-integer :: hh_index
+integer :: hh_index   ! loop index for the altitude array
 
 !-----------------------------------------------------------------------------------------
 ! Time variables
@@ -115,17 +114,14 @@ real(dp), dimension(nz  ) :: temp, &   ! [K], air temperature
                 
 real(dp), dimension(nz-1) :: K_m       ! [m^2/s], turbulent diffusion coefficient
 real(dp), dimension(nz-1) :: K_h       ! [m^2/s], turbulent diffusion coefficient
-real(dp), dimension(nz-1) :: Ri_a      ! Array with Richardson nr-s, for testing
+real(dp), dimension(nz-1) :: Ri_a      ! array with Richardson nr-s, for testing
 
 !-----------------------------------------------------------------------------------------
 ! Emission variables
 !-----------------------------------------------------------------------------------------
-real(dp) :: F_veg_isoprene, & ! Isoprene emission rate
-            F_veg_monoterpene ! Monoterpene emission rate
-real(dp), dimension(nz-1) :: F_veg_isoprene_list, &
-                             F_veg_monoterpene_list
-real(dp) :: exp_coszen, & 
-            temp_emission
+real(dp), dimension(nz-1) :: F_veg_isoprene, &     ! Isoprene emission rate
+                             F_veg_monoterpene     ! Monoterpene emission rate
+real(dp) :: exp_coszen    ! solar radiation
 
 integer :: i, j  ! used for loops
 
@@ -134,9 +130,7 @@ integer :: i, j  ! used for loops
 !-----------------------------------------------------------------------------------------
 real(dp), dimension(neq, nz) :: conc, dconsdt
 real(dp), dimension(neq, nz) :: conc_new         ! [molecules / cm3], number concentration 
-real(dp) :: temp_chemistry
-real(dp) :: O2, N2, H2O, M
-
+real(dp), dimension(nz) :: O2, N2, H2O, M
 
 !-----------------------------------------------------------------------------------------
 ! Initialization
@@ -144,11 +138,12 @@ real(dp) :: O2, N2, H2O, M
 
 call time_init()                 ! initialize time
 call meteorology_init()          ! initialize meteorology
+! initialize isoprene and monoterpene emissions
+F_veg_isoprene      = 0.0_dp 
+F_veg_monoterpene   = 0.0_dp
 
 call open_files()        ! open output files
 call write_files(time)   ! write initial values
-F_veg_isoprene = 0.0_dp 
-F_veg_monoterpene = 0.0_dp
 
 !-----------------------------------------------------------------------------------------
 ! Start main loop
@@ -158,7 +153,7 @@ DO WHILE (time <= time_end)
   !---------------------------------------------------------------------------------------
   ! Meteorology
   !---------------------------------------------------------------------------------------
-    ! Compute K_m for the current time step based on current wind profiles
+  ! Compute K_m for the current time step based on current wind profiles
   call get_K(model_v, hh, uwind, vwind, theta, K_m, K_h, Ri_a)
   ! Set lower boundary condition
   call surface_values(theta(1), time+dt)
@@ -166,15 +161,15 @@ DO WHILE (time <= time_end)
   ! Update meteorology
   DO hh_index = 2, size(hh) - 1
     ! Update uwind
-
     uwind_new(hh_index) = uwind(hh_index) + dt * ( &
                      fcor * (vwind(hh_index) - vg) + &
                      (K_m(hh_index) * (uwind(hh_index+1) - uwind(hh_index)) / (hh(hh_index+1) - hh(hh_index)) - &
                      K_m(hh_index-1) * (uwind(hh_index) - uwind(hh_index-1)) / (hh(hh_index) - hh(hh_index-1))) / &
                      ((hh(hh_index+1) - hh(hh_index-1)) / 2.0_dp))
   END DO
-    ! Update vwind
+
   DO hh_index = 2, size(hh) - 1
+    ! Update vwind
     vwind_new(hh_index) = vwind(hh_index) + dt * ( &
                      -fcor * (uwind(hh_index) - ug) + &
                      (K_m(hh_index) * (vwind(hh_index+1) - vwind(hh_index)) / (hh(hh_index+1) - hh(hh_index)) - &
@@ -183,14 +178,19 @@ DO WHILE (time <= time_end)
   END DO
   
   DO hh_index = 2, size(hh) - 1
+    ! Update potent. temperature
     theta_new(hh_index) = theta(hh_index) + dt * ( &
                      K_h(hh_index) * (theta(hh_index+1) - theta(hh_index)) / (hh(hh_index+1) - hh(hh_index)) - &
                      K_h(hh_index-1) * (theta(hh_index) - theta(hh_index-1)) / (hh(hh_index) - hh(hh_index-1))) / &
                      ((hh(hh_index+1) - hh(hh_index-1)) / 2.0_dp)                 
   END DO
-  uwind(2:nz-1)=uwind_new(2:nz-1)
-  vwind(2:nz-1)=vwind_new(2:nz-1)
-  theta(2:nz-1)=theta_new(2:nz-1)
+  ! Update uwind, vwind and theta arrays with new meteorological state
+  uwind(2:nz-1) = uwind_new(2:nz-1)
+  vwind(2:nz-1) = vwind_new(2:nz-1)
+  theta(2:nz-1) = theta_new(2:nz-1)
+  
+  temp = theta - (grav/Cp)*hh
+  pres = barometric_law(p00, temp, hh)
   !---------------------------------------------------------------------------------------
   ! Emission
   !---------------------------------------------------------------------------------------
@@ -198,22 +198,23 @@ DO WHILE (time <= time_end)
   ! Compute emission part every dt_emis, multiplying 1000 to convert s to ms to make mod easier
   if ( use_emission .and. time >= time_start_emission ) then
     if ( mod( nint((time - time_start_emission)*1000.0d0), nint(dt_emis*1000.0d0) ) == 0 ) then
-      ! Calculate emission rates
       exp_coszen = get_exp_coszen(time, daynumber, latitude)
-      temp_emission = theta(2) - (grav/Cp)*10.0_dp
-      call get_emissions(exp_coszen, temp_emission, F_veg_isoprene, F_veg_monoterpene)
-      F_veg_isoprene_list(2) = F_veg_isoprene
-      F_veg_monoterpene_list(2) = F_veg_monoterpene  
+      ! Calculate emission rates
+      call get_emissions(exp_coszen, temp(2), F_veg_isoprene(2), F_veg_monoterpene(2))  
+      ! Update concentration for isoprene
+      conc(13,2) = conc(13,2) + (F_veg_isoprene(2) * dt_emis) / (hc*100)
+      ! Update concentration for monoterpenes
+      conc(23,2) = conc(23,2) + (F_veg_monoterpene(2) * dt_emis) / (hc*100)
     end if
   end if
 
   if ( use_emission .and. (.not. use_chemistry) ) then
     ! Add emission to the number concentrations of compounds
     ! Convert emissions from flux (molecules/cm2/s) to number concentration (molecules/cm3)
-    ! Update concentration for isoprene (C5H8)
-    conc(13,2) = conc(13,2) + (F_veg_isoprene * dt) / ((hh(3) - hh(2)) * 100.0_dp) 
-    ! Update concentration for monoterpenes (e.g., alpha-pinene)
-    conc(23,2) = conc(23,2) + (F_veg_monoterpene * dt) / ((hh(3) - hh(2)) * 100.0_dp)
+    ! Update concentration for isoprene
+    ! conc(13,2) = conc(13,2) + (F_veg_isoprene(2) * dt_emis) / (hc*100)
+    ! Update concentration for monoterpenes
+    ! conc(23,2) = conc(23,2) + (F_veg_monoterpene(2) * dt_emis) / (hc*100)
   end if
 
   !---------------------------------------------------------------------------------------
@@ -236,23 +237,25 @@ DO WHILE (time <= time_end)
   ! Compute chemistry part every dt_chem, multiplying 1000 to convert s to ms to make mod easier
   if ( use_chemistry .and. time >= time_start_chemistry ) then
     if ( mod( nint((time - time_start_chemistry)*1000.0d0), nint(dt_chem*1000.0d0) ) == 0 ) then
-
       ! Solve chemical equations for each layer except boundaries
       exp_coszen = get_exp_coszen(time, daynumber, latitude)
       do hh_index=2, nz-1
-        temp_chemistry = theta(hh_index) - (grav/Cp)*10.0_dp
-        M = p00*NA / (Rgas*temp_chemistry) * 1d-6   ! Air molecules concentration [molecules/cm3]
-        O2   = 0.21d0*M                             ! Oxygen concentration [molecules/cm3]
-        N2   = 0.78d0*M                             ! Nitrogen concentration [molecules/cm3]
-        H2O  = 1.0D16                               ! Water molecules [molecules/cm3]
-        conc( 1, hh_index) = 24.0d0   * M * ppb     ! O3
-        conc( 5, hh_index) = 0.2d0    * M * ppb     ! NO2
-        conc( 6, hh_index) = 0.07d0   * M * ppb     ! NO
-        conc( 9, hh_index) = 100.0d0  * M * ppb     ! CO
-        conc(11, hh_index) = 1759.0d0 * M * ppb     ! CH4
-        conc(20, hh_index) = 0.5d0    * M * ppb     ! SO2
 
-        call chemistry_step(conc(1:neq, hh_index), time, time+dt, O2, N2, M, H2O, temp(hh_index), exp_coszen, F_veg_isoprene_list(hh_index), F_veg_monoterpene_list(hh_index)) 
+        M(hh_index)    = pres(hh_index)*NA / (Rgas*temp(hh_index)) * 1d-6   ! Air molecules concentration [molecules/cm3]
+        O2(hh_index)   = 0.21d0*M(hh_index)                                 ! Oxygen
+        N2(hh_index)   = 0.78d0*M(hh_index)                                 ! Nitrogen
+        H2O(hh_index)  = 1.0D16                                             ! Water
+        conc( 1, hh_index) = 24.0d0   * M(hh_index) * ppb     ! O3
+        conc( 5, hh_index) = 0.2d0    * M(hh_index) * ppb     ! NO2
+        conc( 6, hh_index) = 0.07d0   * M(hh_index) * ppb     ! NO
+        conc( 9, hh_index) = 100.0d0  * M(hh_index) * ppb     ! CO
+        conc(11, hh_index) = 1759.0d0 * M(hh_index) * ppb     ! CH4
+        conc(20, hh_index) = 0.5d0    * M(hh_index) * ppb     ! SO2
+
+        call chemistry_step(conc(1:neq, hh_index), time, time+dt_chem            , &
+                           O2(hh_index), N2(hh_index), M(hh_index), H2O(hh_index), &
+                           temp(hh_index), exp_coszen                            , &
+                           F_veg_isoprene(hh_index), F_veg_monoterpene(hh_index)) 
       end do
     end if  ! every dt_chem
   end if
@@ -275,6 +278,7 @@ DO WHILE (time <= time_end)
     END DO
     conc = conc_new
     ! Set the constraints above again for output
+    conc(1:neq,1) = conc(1:neq,2) ! concentration for layer 1 and layer 2 equal => no flux
   end if
 
   !---------------------------------------------------------------------------------------
@@ -390,7 +394,7 @@ subroutine write_files(time)
   write(13, outfmt_level     ) K_m
   write(14, outfmt_level     ) K_h
   write(15, outfmt_level     ) Ri_a
-  write(16, *) time, F_veg_isoprene, F_veg_monoterpene, daynumber, exp_coszen
+  write(16, *                ) F_veg_isoprene(2), F_veg_monoterpene(2)
   write(17, outfmt_level     ) conc(:,2)
   write(18, outfmt_level     ) conc(:,6)
   write(19, outfmt_level     ) conc(:,23)
@@ -430,7 +434,7 @@ end subroutine close_files
 subroutine time_init()
   ! Basic time variables
   time_start = 0.0d0
-  time_end   = 5.0d0 * 24.0d0 * one_hour
+  time_end   = 1.0d0 * 24.0d0 * one_hour
   time       = time_start
 
   ! Time steps
@@ -471,8 +475,10 @@ subroutine meteorology_init()
   vwind(nz) = vg
 
   ! Potential temperature
-  theta     = 273.15d0 + 25.0d0
-  theta(nz) = 273.15d0 + 30.0d0
+  ! theta     = 273.15d0 + 0.0d0 winter
+  theta     = 273.15d0 + 25.0d0  ! summer
+  !theta(nz) = 273.15d0 + 5.0d0 winter
+  theta(nz) = 273.15d0 + 30.0d0  ! summer
 
   ! Air temperature and pressure
   temp = theta - (grav/Cp)*hh
@@ -496,6 +502,7 @@ subroutine surface_values(temperature, time)
   real(dp), intent(out)           :: temperature ! output, in Kelvin
   logical, save                   :: first_time = .true.
   real(dp), dimension(8,50), save :: surface_data
+  ! real(dp), dimension(7,50), save :: surface_data ! winter
   real(dp), dimension(50), save   :: temperature_data
   real(dp), parameter             :: seconds_in_day = 24*60*60
   real(dp), parameter             :: seconds_in_30min = 30*60
@@ -505,7 +512,8 @@ subroutine surface_values(temperature, time)
   ! Only when called for the first time, read in data from file
   ! With this trick, we don't need to open the file in the main program
   IF (first_time) THEN
-     open(30, file=trim(adjustl(input_dir))//'/hyytiala_20110710-t_h2o.dat', status='old')
+     open(30, file=trim(adjustl(input_dir))//'/hyytiala_20110710-t_h2o.dat', status='old')   ! summer
+    !  open(30, file=trim(adjustl(input_dir))//'/hyytiala_20110218-t_h2o.dat', status='old') ! winter
      read(30, *) surface_data
      temperature_data(1:50) = surface_data(7,1:50) ! in Celcius
      first_time = .false.
