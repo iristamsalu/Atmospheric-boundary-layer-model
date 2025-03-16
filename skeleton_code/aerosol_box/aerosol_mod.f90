@@ -8,7 +8,7 @@ PUBLIC :: pi
 PUBLIC :: dp, cond_vapour, diameter, particle_mass, particle_volume, particle_conc, &
           particle_density, nucleation_coef, molecular_mass, molar_mass, &
           molecular_volume, molecular_dia, mass_accomm, &
-          PN, PM
+          PN, PM, nucleation_rate
 PUBLIC :: aerosol_init, nucleation, condensation, coagulation, dry_dep_velocity
 
 !====================== Definition of variables =====================================================================!
@@ -111,11 +111,19 @@ SUBROUTINE aerosol_init(diameter, particle_mass, particle_volume, particle_conc,
 
 END SUBROUTINE aerosol_init
   
-SUBROUTINE nucleation ! (Add input and output variables here)
-  
+SUBROUTINE nucleation(timestep, cond_vapour, nucleation_coef, nucleation_rate, particle_conc)
   ! Consider how kinetic H2SO4 nucleation influence the number concentrations of particles 
   ! in the fist size bin particle_conc(1) within one model time step
-
+  REAL(dp), INTENT(IN) :: nucleation_coef, & ! [m3 molec-1], nucleation coefficient
+                          cond_vapour    , & ! [molec/m^3], concentration of condensable vapours 
+                          timestep           ! [s]
+  REAL(dp), INTENT(OUT) :: nucleation_rate ! [# m-3 s-1], nucleation rate 
+  REAL(dp), DIMENSION(nr_bins), INTENT(INOUT) :: particle_conc ! [# cm-3], particle number concentration
+  
+  particle_conc(1) = particle_conc(1) * 10d6                        ! [cm-3] -> [m-3]
+  nucleation_rate = nucleation_coef * cond_vapour**2                ! [m-3 s-1]
+  particle_conc(1) = particle_conc(1) + nucleation_rate * timestep  ! [# m-3]
+  particle_conc(1) = particle_conc(1) / 10d6                        ! [m-3] -> [cm-3]
 END SUBROUTINE nucleation
 
 SUBROUTINE condensation(timestep, temperature, pressure, mass_accomm, molecular_mass, &

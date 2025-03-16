@@ -26,6 +26,7 @@ real(dp) :: time                , &  ! [s], current time in simulation
             DSWF                , &  ! [W m-2], Downward Shortwave Radiation Flux
             mixing_height            ! [m], boundary layer mixing height
 
+integer :: nr_bins ! nr of bins for aerosol particles
 !=====================================!
 ! Programe starts
 !=====================================!
@@ -61,12 +62,10 @@ write(103,*) PM
 write(104,*) time/one_day
 
 do while (time < time_end) ! Main program time step loop
-
   ! Meteorological parameters:
   ! In the 1D model you will use the temperaure and pressure for different levels instead
   temperature = 300D0  ! [K]
   pressure = 1D5       ! [Pa]
-  
   Richards_nr10m = 0D0 ! [-], Richardson number at 10 m above ground (0 for neutral atmosphere)
   wind_speed10m = 2D0  ! [m s-1], wind speed at the reference altitude 10 m
   mixing_height = 1D3  ! [m], assumed mixing height of the box model
@@ -77,25 +76,39 @@ do while (time < time_end) ! Main program time step loop
   DSWF = 6D2 * sin(pi/one_day* time) ! [W m-2], Downward Shortwave radiation flux (diurnal cycle)
   
   cond_vapour(1) = 1D13*sin(pi/one_day* time) ! [molec m-3], [H2SO4]
-  cond_vapour(2) = 1D13                      ! [molec m-3], [ELVOC]
+  if (cond_vapour(1) < 0D0) cond_vapour(1) = 0D0
+  cond_vapour(2) = 1D13                       ! [molec m-3], [ELVOC]
   
   if (use_aerosol_deposition) then
   !!! Calculate particle dry deposition velocity and particle losses due to dry deposition here !!!
+    ! call dry_dep_velocity(diameter, particle_density, temperature, pressure, DSWF, &
+    ! Richards_nr10m, wind_speed10m, v_dep, vd_SO2, vd_O3)
+    ! particle_conc = particle_conc * exp(-v_dep / mixing_height * timestep)  ! Particle dry deposition losses
   end if
   
   if (use_nucleation) then
   !!! Calculate new particle formation (nucleation) here !!!
+    call nucleation(timestep, cond_vapour(1), nucleation_coef, nucleation_rate, particle_conc)
   end if
   
   if (use_coagulation) then
   !!! Calculate coagulation losses here !!!
+    ! call coagulation(timestep, particle_conc, diameter, coag_loss, &
+    ! temperature, pressure, particle_mass)
   end if
   
   if (use_condensation) then
   !!! Calculate condensation particle growth here !!!
+    ! call condensation(timestep, temperature, pressure, alpha, molecular_mass, &
+    ! molecular_volume, molar_mass, molecular_dia, particle_mass, particle_volume, &
+    ! particle_conc, cond_sink, diameter, cond_vapour)
   end if
 
   !!! Update PN and PM here !!!
+  PN = sum(particle_conc) * 1D-6                ! Total particle number concentration [cm^-3]
+  PM = sum(particle_conc * particle_mass) * 1D9 ! Total particle mass concentration   [ug/m^3]
+
+  nr_bins = 100
   
   time = time + timestep
   
