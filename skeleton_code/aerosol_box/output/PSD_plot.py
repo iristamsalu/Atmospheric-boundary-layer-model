@@ -1,38 +1,51 @@
 import numpy as np
 import matplotlib.pyplot as plt
 
-# Read the diameter data (assuming it's a single row of particle diameters in meters)
+# Load diameter in meters and convert to nanometers
 diameter_file = "diameter.dat"
-diameter = np.loadtxt(diameter_file)  # Read the diameters
+diameter_m = np.loadtxt(diameter_file)
+diameter_nm = diameter_m * 1e9
 
-# Read the particle concentration data (assuming a 2D matrix with concentrations for each size)
-conc_file = "particle_conc.dat"
-concentrations = np.loadtxt(conc_file)  # Read concentrations (shape: 25, 100)
+# Load particle concentration in #/m³ and convert to #/cm³
+conc_file_nucl = "particle_conc_1.dat"
+conc_file_cond = "particle_conc_2.dat"
+conc_file_coag = "particle_conc_3.dat"
+conc_nucl = np.loadtxt(conc_file_nucl)
+conc_cond = np.loadtxt(conc_file_cond)
+conc_coag = np.loadtxt(conc_file_coag)
 
-# Convert the diameter from meters to nanometers (1 meter = 1e9 nanometers)
-diameter_nm = diameter * 1e9
+# Convert concentration from particles per m^3 to particles per cm^3
+conc_nucl_cm3 = conc_nucl / 1e6
+conc_cond_cm3 = conc_cond / 1e6
+conc_coag_cm3 = conc_coag / 1e6
 
-# Convert concentration from particles per cubic meter to particles per cubic centimeter (1 m^3 = 1e6 cm^3)
-concentrations_cm3 = concentrations / 1e6  # Each column corresponds to concentrations at a particular size
+# Select last timestep or average — here using last timestep
+latest_conc_nucl = conc_nucl_cm3[-1, :]
+latest_conc_cond = conc_cond_cm3[-1, :]
+latest_conc_coag = conc_coag_cm3[-1, :]
 
-# Sum the concentrations across rows (if you want to aggregate them into a single distribution)
-aggregated_concentration = np.sum(concentrations_cm3, axis=0)
 
-# Create the plot for the particle size distribution
-plt.figure(figsize=(10, 6))
+# Plotting
+plt.figure(figsize=(10, 8))
+plt.plot(diameter_nm, latest_conc_nucl, linestyle='-', color='b', label="Only Nucleation")
+plt.plot(diameter_nm, latest_conc_cond, linestyle='-', color='red', label="Nucleation & Condensation")
+plt.plot(diameter_nm, latest_conc_coag, linestyle='--', color='orange', label="Nucleation, Condensation & Coagulation")
 
-# Plot concentration vs diameter (log scale for both axes)
-plt.plot(diameter_nm, aggregated_concentration, linestyle='-', color='b')
-
-# Labeling the plot
-plt.xscale('log')  # Log scale for diameter (nm)
-plt.yscale('log')  # Log scale for concentration (cm^3)
+# Axes
+plt.xscale('log')
+plt.yscale('log')
 plt.xlabel('Particle Diameter (nm)')
 plt.ylabel(r'$\Delta N$ (cm$^{-3}$)')
-plt.xlim(0)
 plt.title('Particle Size Distribution')
-plt.grid(True, which="both", ls="--")
 
-# Save the plot as an image (optional)
-plt.savefig("particle_size_distribution.png")
+# Grid + axis limits
+plt.grid(True, which="both", ls="--", alpha=0.6)
+plt.xlim(10**0, 10**3)
+plt.ylim(10**-6)
 
+# Legend
+plt.legend()
+
+# Save plot
+plt.tight_layout()
+plt.savefig("PSD", dpi=300)

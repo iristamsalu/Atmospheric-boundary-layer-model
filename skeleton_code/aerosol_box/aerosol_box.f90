@@ -41,8 +41,8 @@ if (.not. dir_exist) then
   call system('mkdir ' // trim(adjustl(output_dir)))
 end if
      
-PN=sum(particle_conc)*1D-6                 ! [# cm-3], total particle number concentration
-PM=sum(particle_conc*particle_mass)*1D9    ! [ug m-3], total particle mass concentration
+PN = sum(particle_conc) * 1D-6                   ! [# cm-3], total particle number concentration
+PM = sum(particle_conc * particle_mass) * 1D9    ! [ug m-3], total particle mass concentration
 particle_volume_conc = sum(particle_conc * particle_volume) * 1D12 ! [μm³/cm³]
     
 simu_hours = 24D0
@@ -113,8 +113,6 @@ do while (time < time_end) ! Main program time step loop
   ! Calculate Particle Volume Concentration
   particle_volume_conc = sum(particle_conc * particle_volume) * 1D12 ! [μm³/cm³]
 
-  nr_bins = 100
-  
   time = time + timestep
   
   if (modulo(FLOOR(1000*time), nint(1000*one_hour)) == 0) then

@@ -9,17 +9,11 @@ diameter = np.loadtxt(diameter_file)
 diameter_nm = diameter * 1e9  # Convert to nm
 
 # Read the particle concentration data (in particles per m^3)
-conc_file_nucl = "particle_conc_1.dat"
-conc_file_cond = "particle_conc_2.dat"
-conc_file_coag = "particle_conc_3.dat"
-conc_nucl = np.loadtxt(conc_file_nucl)
-conc_cond = np.loadtxt(conc_file_cond)
-conc_coag = np.loadtxt(conc_file_coag)
+conc_file = "particle_conc.dat"
+concentrations = np.loadtxt(conc_file)
 
 # Convert concentration from particles per m^3 to particles per cm^3
-conc_nucl_cm3 = conc_nucl / 1e6
-conc_cond_cm3 = conc_cond / 1e6
-conc_coag_cm3 = conc_coag / 1e6
+concentrations_cm3 = concentrations / 1e6
 
 # Calculate the volume of particles (in cubic micrometers)
 # Volume (μm³) = (π / 6) * d³, where d is in nanometers (nm)
@@ -28,33 +22,26 @@ volume_μm3 = (np.pi / 6) * (diameter_nm ** 3) / 1e9  # Volume in μm³
 
 # Calculate the volume concentration for each time step
 # Volume concentration = N * V, where N is concentration and V is volume
-volume_conc_nucl = conc_nucl_cm3 * volume_μm3  # Volume concentration in μm³/cm³
-volume_conc_cond = conc_cond_cm3 * volume_μm3  # Volume concentration in μm³/cm³
-volume_conc_coag = conc_coag_cm3 * volume_μm3  # Volume concentration in μm³/cm³
+volume_concentration = concentrations_cm3 * volume_μm3  # Volume concentration in μm³/cm³
 
 # Sum the volume concentrations across all size bins to get the total volume concentration at each time step
-total_volume_conc_nucl = np.sum(volume_conc_nucl, axis=1)  # Sum along size bins for each time step
-total_volume_conc_cond = np.sum(volume_conc_cond, axis=1)  # Sum along size bins for each time step
-total_volume_conc_coag = np.sum(volume_conc_coag, axis=1)  # Sum along size bins for each time step
+total_volume_concentration = np.sum(volume_concentration, axis=1)  # Sum along size bins for each time step
 
 # Define time steps based on your concentration data
 # Assuming each row in concentrations corresponds to a time step, define time values accordingly
 time = np.linspace(0, 1, 25)
 
 # Create the plot
-plt.figure(figsize=(10, 2.5))
+plt.figure(figsize=(10, 6))
 
 # Plot volume concentration change over time
-plt.plot(time, total_volume_conc_nucl, linestyle='-', color='b', label="Only Nucleation")
-plt.plot(time, total_volume_conc_cond, linestyle='--', color='red', label="Nucleation & Condensation")
-plt.plot(time, total_volume_conc_coag, linestyle='-', color='orange', label="Nucleation, Condensation & Coagulation sink")
+plt.plot(time, total_volume_concentration, linestyle='--', color='b')
 
 # Label the plot
 plt.xlabel('Time (Days)')
 plt.ylabel(r'$PV$ ($\mu$m$^3$/cm$^3$)')
 plt.title('Volume Concentration')
 plt.xlim(0, max(time))
-plt.legend()
 plt.grid(True, which="both", ls="--")
 
 # Save the plot

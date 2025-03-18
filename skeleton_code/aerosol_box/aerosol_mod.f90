@@ -164,14 +164,15 @@ SUBROUTINE condensation(timestep, temperature, pressure, mass_accomm, molecular_
   speed_p = SQRT(8D0*kb*temperature/(pi*particle_mass))                     ! speed of particles (m/s)
   
   diffusivity_gas=5D0/(16D0*Na*molecular_dia**2D0*dens_air)*&
-  SQRT(Rg*temperature*Mair/(2D0*pi)*(molar_mass+Mair)/molar_mass)            ! Diffusivity of condensable vapours (m^2 s^-1)
+  SQRT(Rg*temperature*Mair/(2D0*pi)*(molar_mass+Mair)/molar_mass)           ! Diffusivity of condensable vapours (m^2 s^-1)
   
   ! Thermal velocity of vapour molecule
   speed_gas=SQRT(8D0*kb*temperature/(pi*molecular_mass)) ! speed of H2SO4 molecule
   
   ! Initialize concentration
   particle_conc_new = 0.0_dp
-  particle_conc_new(nr_bins) = particle_conc(nr_bins)  ! Last bin not changing
+  ! Last bin not changing
+  particle_conc_new(nr_bins) = particle_conc(nr_bins)
 
   DO j=1, nr_bins-1
     ! Calculate Kndusen nr for each gas
@@ -200,14 +201,13 @@ SUBROUTINE condensation(timestep, temperature, pressure, mass_accomm, molecular_
                             + collision_ELVOC(j) * cond_vapour(2) * molecular_volume(2) * timestep   ! ELVOC condensation
   END DO
 
-  ! Use the full-stationary method to divide the particles between the existing size bins (fixed diameter grid):
+  ! Use the full-stationary method to divide the particles between the existing size bins
   DO j = 1, nr_bins-1
-    ! Add equations that redistributes the particle number concentration 
     ! Fraction of the particle number concentration that stay in size bin j
     fraction_stay = (particle_volume(j+1) - particle_volume_new(j)) / (particle_volume(j+1) - particle_volume(j))
-    ! Fraction of the particle number concentration that move to size bin j+1
+    ! Fraction of the particle number concentration that move to next size bin j+1
     fraction_move = 1.0_dp - fraction_stay
-    !in size bin 1 to nr_bins-1 to the fixed volume (diameter) grid  
+    ! In size bin 1 to nr_bins-1 to the fixed volume (diameter) grid  
     particle_conc_new(j) = particle_conc_new(j) + fraction_stay * particle_conc(j)
     particle_conc_new(j+1) = particle_conc_new(j+1) + fraction_move * particle_conc(j)
   END DO
@@ -273,7 +273,7 @@ SUBROUTINE coagulation(timestep, particle_conc, diameter, &
   END DO
 
   ! Compute coagulation with particles in different bins (loss2)
-  DO i = 1, nr_bins
+  DO i = 1, nr_bins-1
      DO j = i+1, nr_bins
       loss2 = coagulation_coef(i,j) * particle_conc(i) * particle_conc(j)
       coag_loss(i) = coag_loss(i) + loss2
