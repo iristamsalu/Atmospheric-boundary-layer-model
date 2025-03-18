@@ -8,7 +8,7 @@ PUBLIC :: pi
 PUBLIC :: dp, cond_vapour, diameter, particle_mass, particle_volume, particle_conc, &
           particle_density, nucleation_coef, molecular_mass, molar_mass, &
           molecular_volume, molecular_dia, mass_accomm, &
-          PN, PM, nucleation_rate
+          PN, PM, nucleation_rate, cond_sink, particle_volume_conc
 PUBLIC :: aerosol_init, nucleation, condensation, coagulation, dry_dep_velocity
 
 !====================== Definition of variables =====================================================================!
@@ -51,6 +51,8 @@ REAL(dp) :: particle_density, &  ! [kg]
             mass_accomm          ! mass accomodation coefficient 
 
 REAL(dp) :: nucleation_rate  ! [# m-3 s-1]
+
+REAL(dp) :: particle_volume_conc  ! Particle volume concentration [μm³/cm³]
 
 
 CONTAINS
@@ -118,21 +120,20 @@ SUBROUTINE nucleation(timestep, cond_vapour, nucleation_coef, nucleation_rate, p
                           cond_vapour    , & ! [molec/m^3], concentration of condensable vapours 
                           timestep           ! [s]
   REAL(dp), INTENT(OUT) :: nucleation_rate ! [# m-3 s-1], nucleation rate 
-  REAL(dp), DIMENSION(nr_bins), INTENT(INOUT) :: particle_conc ! [# cm-3], particle number concentration
+  REAL(dp), DIMENSION(nr_bins), INTENT(INOUT) :: particle_conc ! [# m-3], particle number concentration
   
-  particle_conc(1) = particle_conc(1) * 10d6                        ! [cm-3] -> [m-3]
   nucleation_rate = nucleation_coef * cond_vapour**2                ! [m-3 s-1]
   particle_conc(1) = particle_conc(1) + nucleation_rate * timestep  ! [# m-3]
-  particle_conc(1) = particle_conc(1) / 10d6                        ! [m-3] -> [cm-3]
 END SUBROUTINE nucleation
 
 SUBROUTINE condensation(timestep, temperature, pressure, mass_accomm, molecular_mass, &
                         molecular_volume, molar_mass, molecular_dia, particle_mass, particle_volume, &
-                        particle_conc, diameter, cond_vapour) ! Add more variables if you need it
+                        particle_conc, cond_sink, diameter, cond_vapour)
   
   REAL(dp), DIMENSION(nr_bins), INTENT(IN) :: diameter, particle_mass
   REAL(dp), DIMENSION(nr_cond), INTENT(IN) :: molecular_mass, molecular_dia, &
-                                              molecular_volume, molar_mass
+                                              molecular_volume, molar_mass,  &
+                                              cond_sink
   REAL(dp), INTENT(IN) :: timestep, temperature, pressure, mass_accomm
   
   REAL(dp), DIMENSION(nr_bins), INTENT(INOUT) :: particle_conc
@@ -141,16 +142,16 @@ SUBROUTINE condensation(timestep, temperature, pressure, mass_accomm, molecular_
   
   REAL(dp), DIMENSION(nr_bins), INTENT(IN) :: particle_volume
   
-  REAL(dp), DIMENSION(nr_bins) :: slip_correction, diffusivity, speed_p, &
-                                  particle_conc_new
+  REAL(dp), DIMENSION(nr_bins) :: slip_correction, diffusivity, speed_p,  &
+                                  particle_conc_new, particle_volume_new, &
+                                  Knudsen_H2SO4, Knudsen_ELVOC,           &
+                                  FS_H2SO4, FS_ELVOC,                     &
+                                  collision_H2SO4, collision_ELVOC
   
   REAL(dp), DIMENSION(nr_cond) :: diffusivity_gas, speed_gas
-  
-  REAL(dp) :: dyn_visc, l_gas, dens_air
+  REAL(dp) :: dyn_visc, l_gas, dens_air, fraction_stay, fraction_move
   
   INTEGER :: j
-  
-  ! Add more variabels as you need it...
   
   dyn_visc = 1.8D-5*(temperature/298D0)**0.85D0  ! dynamic viscosity of air
   dens_air=Mair*pressure/(Rg*temperature)        ! Air density
@@ -168,27 +169,54 @@ SUBROUTINE condensation(timestep, temperature, pressure, mass_accomm, molecular_
   ! Thermal velocity of vapour molecule
   speed_gas=SQRT(8D0*kb*temperature/(pi*molecular_mass)) ! speed of H2SO4 molecule
   
-  ! Calculate the Fuchs-Sutugin correction factor: 
+  ! Initialize concentration
+  particle_conc_new = 0.0_dp
+  particle_conc_new(nr_bins) = particle_conc(nr_bins)  ! Last bin not changing
+
+  DO j=1, nr_bins-1
+    ! Calculate Kndusen nr for each gas
+    Knudsen_H2SO4(j) = 2.0_dp * l_gas / (diameter(j) + molecular_dia(1))  ! H2SO4
+    Knudsen_ELVOC(j) = 2.0_dp * l_gas / (diameter(j) + molecular_dia(2))  ! ELVOC
   
-  ! Calculate the Collision rate (CR [m^3/2]) between gas molecules (H2SO4 and ELVOC) and the particles:
-  
-  ! Calculate the new single particle volume after condensation (particle_volume_new):
-  
+    ! Fuchs-Sutugin correction factor for each gas
+    FS_H2SO4(j) = (0.75_dp * mass_accomm * (1.0_dp + Knudsen_H2SO4(j))) / &
+                  (Knudsen_H2SO4(j)**2.0_dp + Knudsen_H2SO4(j) + &
+                  0.283_dp * Knudsen_H2SO4(j) * mass_accomm + 0.75_dp * mass_accomm)
+
+    FS_ELVOC(j) = (0.75_dp * mass_accomm * (1.0_dp + Knudsen_ELVOC(j))) / &
+                  (Knudsen_ELVOC(j)**2.0_dp + Knudsen_ELVOC(j) + &
+                  0.283_dp * Knudsen_ELVOC(j) * mass_accomm + 0.75_dp * mass_accomm)
+
+    ! Calculate collision rate for H2SO4 and ELVOC molecules with particles
+    collision_H2SO4(j) = 2.0_dp * pi * (diameter(j) + molecular_dia(1)) * &
+                        (diffusivity(j) + diffusivity_gas(1)) * FS_H2SO4(j) * mass_accomm
+
+    collision_ELVOC(j) = 2.0_dp * pi * (diameter(j) + molecular_dia(2)) * &
+                        (diffusivity(j) + diffusivity_gas(2)) * FS_ELVOC(j) * mass_accomm
+
+    ! Update particle volume after condensation
+    particle_volume_new(j) = particle_volume(j) &
+                            + collision_H2SO4(j) * cond_vapour(1) * molecular_volume(1) * timestep & ! H2SO4 condensation
+                            + collision_ELVOC(j) * cond_vapour(2) * molecular_volume(2) * timestep   ! ELVOC condensation
+  END DO
+
   ! Use the full-stationary method to divide the particles between the existing size bins (fixed diameter grid):
-  particle_conc_new=0D0 ! Initialise a new vector with the new particle concentrations
-  particle_conc_new(nr_bins)=particle_conc(nr_bins)
-  
-  DO j = 1,nr_bins-1
-  ! Add equations that redistributes the particle number concentration 
-  !in size bin 1 to nr_bins-1 to the fixed volume (diameter) grid    
+  DO j = 1, nr_bins-1
+    ! Add equations that redistributes the particle number concentration 
+    ! Fraction of the particle number concentration that stay in size bin j
+    fraction_stay = (particle_volume(j+1) - particle_volume_new(j)) / (particle_volume(j+1) - particle_volume(j))
+    ! Fraction of the particle number concentration that move to size bin j+1
+    fraction_move = 1.0_dp - fraction_stay
+    !in size bin 1 to nr_bins-1 to the fixed volume (diameter) grid  
+    particle_conc_new(j) = particle_conc_new(j) + fraction_stay * particle_conc(j)
+    particle_conc_new(j+1) = particle_conc_new(j+1) + fraction_move * particle_conc(j)
   END DO
   ! Update the particle concentration in the particle_conc vector:
-  particle_conc=particle_conc_new
-    
+  particle_conc = particle_conc_new
 END SUBROUTINE condensation
 
 SUBROUTINE coagulation(timestep, particle_conc, diameter, &
-                       temperature,pressure,particle_mass) ! Add more variables if you need it
+                       temperature, pressure, particle_mass)
   
   REAL(dp), DIMENSION(nr_bins), INTENT(IN) :: diameter
   REAL(dp), DIMENSION(nr_bins), INTENT(INOUT) :: particle_conc
@@ -199,12 +227,14 @@ SUBROUTINE coagulation(timestep, particle_conc, diameter, &
   REAL(dp), DIMENSION(nr_bins,nr_bins) :: coagulation_coef        ! coagulation coefficients [m^3/s]
   
   REAL(dp), DIMENSION(nr_bins) :: slip_correction, diffusivity, dist, speed_p, &
-                                  Beta_Fuchs, free_path_p
+                                  Beta_Fuchs, free_path_p, coag_loss
   
   REAL(dp) :: dyn_visc, &  ! dynamic viscosity, kg/(m*s)
-              l_gas        ! Gas mean free path in air
+              l_gas,    &  ! Gas mean free path in air
+              loss1,    &  ! Self coagulation
+              loss2        ! Coagulation with larger particles
   
-  INTEGER  :: i
+  INTEGER  :: i, j
   
   ! The coagulation coefficient is calculated according to formula 13.56 in Seinfield and Pandis (2006), Page 603
   
@@ -223,7 +253,7 @@ SUBROUTINE coagulation(timestep, particle_conc, diameter, &
   
   dist = (1D0/(3D0*diameter*free_path_p))*((diameter+free_path_p)**3D0 &
   -(diameter**2D0+free_path_p**2D0)**(3D0/2D0))-diameter                    ! mean distance from the center of a sphere reached by particles leaving the sphere's surface (m)
-  
+
   DO i = 1,nr_bins
      Beta_Fuchs = 1D0/((diameter+diameter(i))/(diameter+diameter(i)+&
      2D0*(dist**2D0+dist(i)**2D0)**0.5D0)+8D0*(diffusivity+diffusivity(i))/&
@@ -232,15 +262,29 @@ SUBROUTINE coagulation(timestep, particle_conc, diameter, &
      coagulation_coef(i,:) = 2D0*pi*Beta_Fuchs*(diameter*diffusivity(i)+&
      diameter*diffusivity+diameter(i)*diffusivity+diameter(i)*diffusivity(i))             ! coagulation rates between two particles of all size combinations  (m^3/s)    
   END DO
-  
-  ! Write equations that considers how the particle number concentration in each size bin 
-  !(particle_conc) is influenced by the coagulation sink (loss of smaller particles when
-  ! they collide with larger ones)
-  
-  ! You can first calculate the loss (loss1) do to self-coagulation between particles in the same size bin
-  ! and then calculate the loss (loss2) due to coagulation with larger particles
-  ! Then add the two loss terms together loss = loss1 + loss2 
 
+  ! Initialize the coagulation loss term
+  coag_loss = 0.0D0
+
+  ! Compute self-coagulation (loss1): coagulation within the same bin
+  DO i = 1, nr_bins
+     loss1 = coagulation_coef(i,i) * particle_conc(i) * particle_conc(i)
+     coag_loss(i) = coag_loss(i) + loss1
+  END DO
+
+  ! Compute coagulation with particles in different bins (loss2)
+  DO i = 1, nr_bins
+     DO j = i+1, nr_bins
+      loss2 = coagulation_coef(i,j) * particle_conc(i) * particle_conc(j)
+      coag_loss(i) = coag_loss(i) + loss2
+     END DO
+  END DO
+
+  ! Calculate the change in particle concentration due to coagulation
+  DO i = 1, nr_bins
+     ! The concentration decreases due to coagulation
+     particle_conc(i) = particle_conc(i) - coag_loss(i) * timestep
+  END DO  
 END SUBROUTINE coagulation
 
   

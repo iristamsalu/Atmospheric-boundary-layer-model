@@ -43,6 +43,7 @@ end if
      
 PN=sum(particle_conc)*1D-6                 ! [# cm-3], total particle number concentration
 PM=sum(particle_conc*particle_mass)*1D9    ! [ug m-3], total particle mass concentration
+particle_volume_conc = sum(particle_conc * particle_volume) * 1D12 ! [μm³/cm³]
     
 simu_hours = 24D0
 timestep   = 10.0d0
@@ -55,11 +56,13 @@ open(101,file=trim(adjustl(output_dir))//'/particle_conc.dat',status='replace',a
 open(102,file=trim(adjustl(output_dir))//'/PN.dat',status='replace',action='write')
 open(103,file=trim(adjustl(output_dir))//'/PM.dat',status='replace',action='write')
 open(104,file=trim(adjustl(output_dir))//'/time.dat',status='replace',action='write')
+open(105, file=trim(adjustl(output_dir))//'/volume_conc.dat', status='replace', action='write')
 write(100,*) diameter
 write(101,*) particle_conc
 write(102,*) PN
 write(103,*) PM
 write(104,*) time/one_day
+write(105,*) particle_volume_conc 
 
 do while (time < time_end) ! Main program time step loop
   ! Meteorological parameters:
@@ -93,20 +96,22 @@ do while (time < time_end) ! Main program time step loop
   
   if (use_coagulation) then
   !!! Calculate coagulation losses here !!!
-    ! call coagulation(timestep, particle_conc, diameter, coag_loss, &
-    ! temperature, pressure, particle_mass)
+    call coagulation(timestep, particle_conc, diameter, &
+    temperature, pressure, particle_mass)
   end if
   
   if (use_condensation) then
   !!! Calculate condensation particle growth here !!!
-    ! call condensation(timestep, temperature, pressure, alpha, molecular_mass, &
-    ! molecular_volume, molar_mass, molecular_dia, particle_mass, particle_volume, &
-    ! particle_conc, cond_sink, diameter, cond_vapour)
+    call condensation(timestep, temperature, pressure, mass_accomm, molecular_mass, &
+    molecular_volume, molar_mass, molecular_dia, particle_mass, particle_volume, &
+    particle_conc, cond_sink, diameter, cond_vapour)
   end if
 
   !!! Update PN and PM here !!!
   PN = sum(particle_conc) * 1D-6                ! Total particle number concentration [cm^-3]
   PM = sum(particle_conc * particle_mass) * 1D9 ! Total particle mass concentration   [ug/m^3]
+  ! Calculate Particle Volume Concentration
+  particle_volume_conc = sum(particle_conc * particle_volume) * 1D12 ! [μm³/cm³]
 
   nr_bins = 100
   
@@ -118,6 +123,7 @@ do while (time < time_end) ! Main program time step loop
     write(102,*) PN
     write(103,*) PM
     write(104,*) time/one_day
+    write(105, *) particle_volume_conc
   end if
 end do
 
@@ -126,5 +132,5 @@ close(101)
 close(102)
 close(103)
 close(104)
-
+close(105)
 END PROGRAM aerosol_box
