@@ -11,6 +11,7 @@ PUBLIC :: dp, cond_vapour, diameter, particle_mass, particle_volume, particle_co
           PN, PM, nucleation_rate, cond_sink, particle_volume_conc
 PUBLIC :: aerosol_init, nucleation, condensation, coagulation, dry_dep_velocity
 
+
 !====================== Definition of variables =====================================================================!
 INTEGER, PARAMETER :: dp = SELECTED_REAL_KIND(15,300)
 ! so that numbers will be in 64bit floating point
@@ -149,7 +150,7 @@ SUBROUTINE condensation(timestep, temperature, pressure, mass_accomm, molecular_
                                   collision_H2SO4, collision_ELVOC
   
   REAL(dp), DIMENSION(nr_cond) :: diffusivity_gas, speed_gas
-  REAL(dp) :: dyn_visc, l_gas, dens_air, fraction_stay, fraction_move
+  REAL(dp) :: dyn_visc, l_gas, dens_air, fraction_stay, fraction_move, lambda_H2SO4, lambda_ELVOC
   
   INTEGER :: j
   
@@ -176,8 +177,11 @@ SUBROUTINE condensation(timestep, temperature, pressure, mass_accomm, molecular_
 
   DO j=1, nr_bins-1
     ! Calculate Kndusen nr for each gas
-    Knudsen_H2SO4(j) = 2.0_dp * l_gas / (diameter(j) + molecular_dia(1))  ! H2SO4
-    Knudsen_ELVOC(j) = 2.0_dp * l_gas / (diameter(j) + molecular_dia(2))  ! ELVOC
+    lambda_H2SO4 = 3D0 * (diffusivity_gas(1)+ diffusivity(j)) / SQRT(speed_gas(1)**2 + speed_p(j)**2)
+    Knudsen_H2SO4(j) = 2.0_dp * lambda_H2SO4 / (diameter(j) + molecular_dia(1))  ! H2SO4
+
+    lambda_ELVOC = 3D0 * (diffusivity_gas(2)+ diffusivity(j)) / SQRT(speed_gas(2)**2 + speed_p(j)**2)
+    Knudsen_ELVOC(j) = 2.0_dp * lambda_ELVOC / (diameter(j) + molecular_dia(2))  ! ELVOC
   
     ! Fuchs-Sutugin correction factor for each gas
     FS_H2SO4(j) = (0.75_dp * mass_accomm * (1.0_dp + Knudsen_H2SO4(j))) / &
@@ -200,7 +204,7 @@ SUBROUTINE condensation(timestep, temperature, pressure, mass_accomm, molecular_
                             + collision_H2SO4(j) * cond_vapour(1) * molecular_volume(1) * timestep & ! H2SO4 condensation
                             + collision_ELVOC(j) * cond_vapour(2) * molecular_volume(2) * timestep   ! ELVOC condensation
   END DO
-
+  
   ! Use the full-stationary method to divide the particles between the existing size bins
   DO j = 1, nr_bins-1
     ! Fraction of the particle number concentration that stay in size bin j

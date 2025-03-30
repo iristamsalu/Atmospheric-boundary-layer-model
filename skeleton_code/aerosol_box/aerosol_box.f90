@@ -9,8 +9,8 @@ real(dp), parameter :: one_day  = 86400.0d0  ! seconds of one day
 
 logical, parameter :: use_aerosol_deposition = .true., &
                       use_nucleation         = .true., &
-                      use_condensation       = .true., &
-                      use_coagulation        = .true.
+                      use_condensation       = .false., &
+                      use_coagulation        = .false.
 
 logical :: dir_exist
 character(len=255), parameter :: output_dir = './output'
