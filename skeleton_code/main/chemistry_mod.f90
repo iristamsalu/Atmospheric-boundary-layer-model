@@ -36,10 +36,10 @@ integer  :: iwork(liw)   ! integer workspace
 contains
 
 
-subroutine chemistry_step(conc,time1,time2,O2_in,N2_in,M_in,H2O_in,TEMP_in,exp_coszen,F_veg_isoprene,F_veg_monoterpene)
+subroutine chemistry_step(conc,time1,time2,O2_in,N2_in,M_in,H2O_in,TEMP_in,exp_coszen,F_veg_isoprene,F_veg_monoterpene,CS_H2SO4,CS_ELVOC)
   real(dp), intent(inout) :: conc(neq)
   real(dp), intent(in)    :: time1, time2, O2_in, N2_in, M_in, H2O_in, TEMP_in
-  real(dp), intent(in)    :: exp_coszen, F_veg_isoprene, F_veg_monoterpene
+  real(dp), intent(in)    :: exp_coszen, F_veg_isoprene, F_veg_monoterpene, CS_H2SO4, CS_ELVOC
 
   ! for DLSODA:
   integer  :: istate  ! a flag
@@ -60,7 +60,7 @@ subroutine chemistry_step(conc,time1,time2,O2_in,N2_in,M_in,H2O_in,TEMP_in,exp_c
   H2O = H2O_in
   TEMP =TEMP_in
 
-  call calculate_k(exp_coszen, F_veg_isoprene, F_veg_monoterpene)
+  call calculate_k(exp_coszen, F_veg_isoprene, F_veg_monoterpene, CS_H2SO4, CS_ELVOC)
 
   call dlsode (f_lsode, neq, conc, time1b, time2, itol, rtol, atol, itask, &
                istate, iopt, rwork, lrw, iwork, liw, dummy, mf)
@@ -68,9 +68,9 @@ subroutine chemistry_step(conc,time1,time2,O2_in,N2_in,M_in,H2O_in,TEMP_in,exp_c
 end subroutine chemistry_step
 
 
-subroutine calculate_k(exp_coszen, F_veg_isoprene, F_veg_monoterpene)
+subroutine calculate_k(exp_coszen, F_veg_isoprene, F_veg_monoterpene, CS_H2SO4, CS_ELVOC)
 
-   real(dp), intent(in) :: exp_coszen, F_veg_isoprene, F_veg_monoterpene
+   real(dp), intent(in) :: exp_coszen, F_veg_isoprene, F_veg_monoterpene, CS_H2SO4, CS_ELVOC
 
    k_rate(1)  = 3.83D-5*exp_coszen                                                                                ! O3 = O1D + O2
    k_rate(2)  = 1.63D-10*EXP(60/TEMP)                                                                             ! O1D + H2O = OH + OH
@@ -103,13 +103,13 @@ subroutine calculate_k(exp_coszen, F_veg_isoprene, F_veg_monoterpene)
    k_rate(27) = 1.80D-39                                                                                          ! N2O5 + H2O + H2O = HNO3 + HNO3 + H2O
    k_rate(28) = 2.03D-16*(TEMP/300)**4.57d0*EXP(693/TEMP)                                                         ! HO2 + O3 = OH + O2 + O2
    k_rate(29) = 1.5D-12                                                                                           ! SO2 + OH = H2SO4
-   k_rate(30) = 0.001d0                                                                                           ! H2SO4 = H2SO4_P
-   k_rate(31) = F_veg_monoterpene                                                                                   ! Emission rate of alpha-pinene
-   k_rate(32) = F_veg_isoprene                                                                                ! Emission rate of isoprene
+   k_rate(30) = CS_H2SO4                                                                                          ! H2SO4 = H2SO4_P
+   k_rate(31) = F_veg_monoterpene                                                                                 ! Emission rate of alpha-pinene
+   k_rate(32) = F_veg_isoprene                                                                                    ! Emission rate of isoprene
    k_rate(33) = 1.2D-11*EXP(440/TEMP)                                                                             ! OH + Alpha-pinene = Rest
    k_rate(34) = 6.3D-16*EXP(-580/TEMP)                                                                            ! O3 + Alpha-pinene = Rest
    k_rate(35) = 1.03D-14*EXP(-1995/TEMP)                                                                          ! isoprene + O3
-   k_rate(36) = 0.001d0                                                                                           ! ELVOC = ELVOC_P
+   k_rate(36) = CS_ELVOC                                                                                          ! ELVOC = ELVOC_P
 
 end subroutine calculate_k
 
@@ -197,7 +197,7 @@ subroutine f_lsode(neq, time, conc, conc_dot)
   conc_dot(20) = 0.0d0
 
   ! 21 = H2SO4
-  conc_dot(21) = k_rate(29)*conc(3)*conc(20) - k_rate(30)*conc(21)
+   conc_dot(21) = k_rate(29) * conc(3) * conc(20) - k_rate(30) * conc(21)
 
   !22 = H2SO4_P
   conc_dot(22) = k_rate(30)*conc(21)
