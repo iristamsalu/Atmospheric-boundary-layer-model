@@ -140,6 +140,7 @@ real(dp), dimension(2, nz) :: CS
 real(dp), dimension(100, nz) :: particle_conc_hh, particle_conc_hh_new
 real(dp), dimension(nz) :: PN_hh, PV_hh, PM_hh
 integer, parameter :: nr_bins=100 
+
 !-----------------------------------------------------------------------------------------
 ! Initialization
 !-----------------------------------------------------------------------------------------
@@ -149,6 +150,13 @@ call meteorology_init()          ! initialize meteorology
 ! initialize isoprene and monoterpene emissions
 F_veg_isoprene      = 0.0_dp 
 F_veg_monoterpene   = 0.0_dp
+! Initialize aerosol properties
+call aerosol_init(diameter, particle_mass, particle_volume, particle_conc, & 
+                          particle_density, nucleation_coef, molecular_mass, molar_mass, & 
+                          molecular_volume, molecular_dia, mass_accomm)
+do hh_index=1, nz
+  particle_conc_hh(:, hh_index) = particle_conc(:)
+end do
 
 call open_files()        ! open output files
 call write_files(time)   ! write initial values
@@ -298,32 +306,21 @@ DO WHILE (time <= time_end)
   if ( use_aerosol .and. time >= time_start_aerosol ) then
     if ( mod( nint((time - time_start_aerosol)*1000.0d0), nint(dt_aero*1000.0d0) ) == 0 ) then
       ! Nucleation, condensation, coagulation and deposition of particles
-
-      ! Initialize aerosol properties
-      if (time == time_start_aerosol) then
-        call aerosol_init(diameter, particle_mass, particle_volume, particle_conc, & 
-                          particle_density, nucleation_coef, molecular_mass, molar_mass, & 
-                          molecular_volume, molecular_dia, mass_accomm)
-        do hh_index=1, nz
-          particle_conc_hh(:, hh_index) = particle_conc(:)
-        end do
-      end if
-
       do hh_index=2, nz-1
-        ! Initialize particle_conc for this height level
+        ! Initialize particle_conc for this height level from the last timestep
         particle_conc(:) = particle_conc_hh(:, hh_index) 
         ! H2SO4 and ELVOC concentrations at this height level
         cond_vapour(1) = conc(21, hh_index) * 10.0_dp**6.0_dp ! [molec/cm3] 
         cond_vapour(2) = conc(25, hh_index) * 10.0_dp**6.0_dp ! [molec/cm3] 
 
         ! Compute nucleation with H2SO4
-        call nucleation(dt_aero, cond_vapour(1), nucleation_coef, nucleation_rate, particle_conc)
+        call nucleation(dt_aero, cond_vapour(1), nucleation_coef, particle_conc)
 
         ! Compute condensation (updates CS for H2SO4 and ELVOC)
         call condensation(dt_aero, temp(hh_index), pres(hh_index), mass_accomm, molecular_mass, molecular_volume, &
                           molar_mass, molecular_dia, particle_mass, particle_volume, particle_conc, cond_sink,    &
                           diameter, cond_vapour)
-
+  
         ! Compute coagulation
         call coagulation(dt_aero, particle_conc, diameter, temp(hh_index), pres(hh_index), particle_mass)
 
@@ -336,34 +333,39 @@ DO WHILE (time <= time_end)
         CS(1, hh_index) = cond_sink(1)   ! CS for H2SO4
         CS(2, hh_index) = cond_sink(2)   ! CS for ELVOC
 
-        ! Store particle concentration
+        ! Store particle concentration at different altitudes
         particle_conc_hh(:, hh_index) = particle_conc(:)
       end do
     end if  ! every dt_aero
 
     ! Trick to make bottom flux zero
     particle_conc_hh(1:nr_bins, 1) = particle_conc_hh(1:nr_bins, 2)
-    particle_conc_hh(1:nr_bins, nz) = 0.0_dp  ! concentration = 0 at the top layer
-
+    ! particle_conc_hh(1:nr_bins, nz) = 1.0_dp
     ! Mixing of aerosol particles
     particle_conc_hh_new = 0.0_dp
-    do i=1, nr_bins
-        do hh_index=2, nz-1
-          particle_conc_hh_new(i, hh_index) = particle_conc_hh(i, hh_index) + dt * ( &
-          K_h(hh_index) * (particle_conc_hh(i, hh_index+1) - particle_conc_hh(i, hh_index)) / (hh(hh_index+1) - hh(hh_index)) - &
-          K_h(hh_index-1) * (particle_conc_hh(i, hh_index) - particle_conc_hh(i, hh_index-1)) / (hh(hh_index) - hh(hh_index-1))) / &
-          ((hh(hh_index+1) - hh(hh_index-1)) / 2.0_dp)                 
-        end do
+    ! do i=1, nr_bins
+    !     do hh_index=2, nz-1
+    !       particle_conc_hh_new(i, hh_index) = particle_conc_hh(i, hh_index) + dt * ( &
+    !       K_h(hh_index) * (particle_conc_hh(i, hh_index+1) - particle_conc_hh(i, hh_index)) / (hh(hh_index+1) - hh(hh_index)) - &
+    !       K_h(hh_index-1) * (particle_conc_hh(i, hh_index) - particle_conc_hh(i, hh_index-1)) / (hh(hh_index) - hh(hh_index-1))) / &
+    !       ((hh(hh_index+1) - hh(hh_index-1)) / 2.0_dp)                 
+    !     end do
+    ! end do
+    do hh_index=2, nz-1
+      particle_conc_hh_new(:, hh_index) = particle_conc_hh(:, hh_index) + dt * ( &
+      K_h(hh_index) * (particle_conc_hh(:, hh_index+1) - particle_conc_hh(:, hh_index)) / (hh(hh_index+1) - hh(hh_index)) - &
+      K_h(hh_index-1) * (particle_conc_hh(:, hh_index) - particle_conc_hh(:, hh_index-1)) / (hh(hh_index) - hh(hh_index-1))) / &
+      ((hh(hh_index+1) - hh(hh_index-1)) / 2.0_dp)                 
     end do
     particle_conc_hh(:, 2:nz-1) = particle_conc_hh_new(:, 2:nz-1)
 
-    ! Set the constraints above again for output
+    ! Trick to make bottom flux zero
     particle_conc_hh(1:nr_bins, 1) = particle_conc_hh(1:nr_bins, 2)
 
-    ! Update related values, e.g., total number concentration, total mass concentration
+    ! Update particle nr, particle mass, particle volume data for output files
     do hh_index = 1, nz
-      PN_hh(hh_index) = sum(particle_conc_hh(:, hh_index)) * 1D-6  ! Total number concentration [cm^-3]
-      PM_hh(hh_index) = sum(particle_conc_hh(:, hh_index) * particle_mass) * 1D9  ! [ug/m^3]
+      PN_hh(hh_index) = sum(particle_conc_hh(:, hh_index)) * 1D-6  ! [cm-3]
+      PM_hh(hh_index) = sum(particle_conc_hh(:, hh_index) * particle_mass) * 1D9    ! [μg/m3]
       PV_hh(hh_index) = sum(particle_conc_hh(:, hh_index) * particle_volume) * 1D12 ! [μm3/cm3]
     end do
 
@@ -443,13 +445,15 @@ end subroutine open_files
 !-----------------------------------------------------------------------------------------
 subroutine write_files(time)
   real(dp) :: time  ! current time
-  character(255) :: outfmt_one_scalar, outfmt_two_scalar, outfmt_level, outfmt_mid_level
+  character(255) :: outfmt_one_scalar, outfmt_two_scalar, outfmt_level, outfmt_mid_level, outfmt_level_bins
 
   ! Output real data with scientific notation with 16 decimal digits
   outfmt_one_scalar = '(es25.16e3)'                               ! for scalar
   write(outfmt_level     , '(a, i3, a)') '(', nz  , 'es25.16e3)'  ! for original levels
   write(outfmt_mid_level , '(a, i3, a)') '(', nz-1, 'es25.16e3)'  ! for middle levels
   write(outfmt_two_scalar, '(a, i3, a)') '(', 2   , 'es25.16e3)'  ! for two scalars
+  write(outfmt_level_bins, '(a, i3, a)') '(', nr_bins  , 'es25.16e3)'  ! for first level with aerosol
+
 
   ! Only output hh once
   if (time == time_start) then
@@ -472,7 +476,7 @@ subroutine write_files(time)
   write(21, outfmt_level     ) PN_hh
   write(22, outfmt_level     ) PV_hh
   write(23, outfmt_level     ) PM_hh
-  write(24, outfmt_level     ) particle_conc_hh(:,1)
+  write(24, outfmt_level_bins) particle_conc_hh(:,1)
 
 end subroutine write_files
 

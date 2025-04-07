@@ -114,13 +114,13 @@ SUBROUTINE aerosol_init(diameter, particle_mass, particle_volume, particle_conc,
 
 END SUBROUTINE aerosol_init
   
-SUBROUTINE nucleation(timestep, cond_vapour, nucleation_coef, nucleation_rate, particle_conc)
+SUBROUTINE nucleation(timestep, cond_vapour, nucleation_coef, particle_conc)
   ! Consider how kinetic H2SO4 nucleation influence the number concentrations of particles 
   ! in the fist size bin particle_conc(1) within one model time step
   REAL(dp), INTENT(IN) :: nucleation_coef, & ! [m3 molec-1], nucleation coefficient
                           cond_vapour    , & ! [molec/m^3], concentration of condensable vapours 
                           timestep           ! [s]
-  REAL(dp), INTENT(OUT) :: nucleation_rate ! [# m-3 s-1], nucleation rate 
+  REAL(dp) :: nucleation_rate ! [# m-3 s-1], nucleation rate 
   REAL(dp), DIMENSION(nr_bins), INTENT(INOUT) :: particle_conc ! [# m-3], particle number concentration
   
   nucleation_rate = nucleation_coef * cond_vapour**2                ! [m-3 s-1]
@@ -133,8 +133,10 @@ SUBROUTINE condensation(timestep, temperature, pressure, mass_accomm, molecular_
   
   REAL(dp), DIMENSION(nr_bins), INTENT(IN) :: diameter, particle_mass
   REAL(dp), DIMENSION(nr_cond), INTENT(IN) :: molecular_mass, molecular_dia, &
-                                              molecular_volume, molar_mass,  &
-                                              cond_sink
+                                              molecular_volume, molar_mass
+
+  REAL(dp), DIMENSION(nr_cond), INTENT(INOUT) :: cond_sink
+
   REAL(dp), INTENT(IN) :: timestep, temperature, pressure, mass_accomm
   
   REAL(dp), DIMENSION(nr_bins), INTENT(INOUT) :: particle_conc
@@ -175,7 +177,7 @@ SUBROUTINE condensation(timestep, temperature, pressure, mass_accomm, molecular_
   ! Last bin not changing
   particle_conc_new(nr_bins) = particle_conc(nr_bins)
 
-  DO j=1, nr_bins-1
+  DO j=1, nr_bins
     ! Calculate Kndusen nr for each gas
     lambda_H2SO4 = 3D0 * (diffusivity_gas(1)+ diffusivity(j)) / SQRT(speed_gas(1)**2 + speed_p(j)**2)
     Knudsen_H2SO4(j) = 2.0_dp * lambda_H2SO4 / (diameter(j) + molecular_dia(1))  ! H2SO4
@@ -205,18 +207,21 @@ SUBROUTINE condensation(timestep, temperature, pressure, mass_accomm, molecular_
                             + collision_ELVOC(j) * cond_vapour(2) * molecular_volume(2) * timestep   ! ELVOC condensation
   END DO
   
-  ! Use the full-stationary method to divide the particles between the existing size bins
+  ! Use the full-stationary method to divide the particles between the size bins
   DO j = 1, nr_bins-1
     ! Fraction of the particle number concentration that stay in size bin j
     fraction_stay = (particle_volume(j+1) - particle_volume_new(j)) / (particle_volume(j+1) - particle_volume(j))
     ! Fraction of the particle number concentration that move to next size bin j+1
     fraction_move = 1.0_dp - fraction_stay
-    ! In size bin 1 to nr_bins-1 to the fixed volume (diameter) grid  
+    ! In size bin 1 to nr_bins-1 to the fixed diameter grid  
     particle_conc_new(j) = particle_conc_new(j) + fraction_stay * particle_conc(j)
     particle_conc_new(j+1) = particle_conc_new(j+1) + fraction_move * particle_conc(j)
   END DO
-  ! Update the particle concentration in the particle_conc vector:
+  ! Update the particle concentration in the particle_conc vector
   particle_conc = particle_conc_new
+  cond_sink(1) = sum(particle_conc * collision_H2SO4)
+  cond_sink(2) = sum(particle_conc * collision_ELVOC)
+
 END SUBROUTINE condensation
 
 SUBROUTINE coagulation(timestep, particle_conc, diameter, &
@@ -242,7 +247,7 @@ SUBROUTINE coagulation(timestep, particle_conc, diameter, &
   
   ! The coagulation coefficient is calculated according to formula 13.56 in Seinfield and Pandis (2006), Page 603
   
-  dyn_visc = 1.8D-5*(temperature/298.0d0)**0.85                                              ! Dynamic viscosity of air
+  dyn_visc = 1.8D-5*(temperature/298.0d0)**0.85                                           ! Dynamic viscosity of air
   
   l_gas=2D0*dyn_visc/(pressure*SQRT(8D0*Mair/(pi*Rg*temperature)))                        ! Gas mean free path in air (m)
   
@@ -256,7 +261,7 @@ SUBROUTINE coagulation(timestep, particle_conc, diameter, &
   free_path_p = 8D0*diffusivity/(pi*speed_p)                                              ! Particle mean free path (m)
   
   dist = (1D0/(3D0*diameter*free_path_p))*((diameter+free_path_p)**3D0 &
-  -(diameter**2D0+free_path_p**2D0)**(3D0/2D0))-diameter                    ! mean distance from the center of a sphere reached by particles leaving the sphere's surface (m)
+  -(diameter**2D0+free_path_p**2D0)**(3D0/2D0))-diameter                                  ! mean distance from the center of a sphere reached by particles leaving the sphere's surface (m)
 
   DO i = 1,nr_bins
      Beta_Fuchs = 1D0/((diameter+diameter(i))/(diameter+diameter(i)+&
