@@ -241,6 +241,10 @@ DO WHILE (time <= time_end)
   if ( use_deposition .and. time >= time_start_deposition ) then
     if ( mod( nint((time - time_start_deposition)*1000.0d0), nint(dt_depo*1000.0d0) ) == 0 ) then
       ! Calculate deposition velocity
+      ! Compute deposition
+      ! call dry_dep_velocity(diameter, particle_density, temperature, pressure, DSWF, &
+      ! Richards_nr10m, wind_speed10m, v_dep, vd_SO2, vd_O3)
+      ! particle_conc = particle_conc * exp(-v_dep / mixing_height * timestep)  ! Particle dry deposition losses
 
       ! Remove deposited concentration at level 2 which includes canopy and soil
     end if
@@ -268,6 +272,8 @@ DO WHILE (time <= time_end)
         conc(11, hh_index) = 1759.0d0 * M(hh_index) * ppb     ! CH4
         conc(20, hh_index) = 0.5d0    * M(hh_index) * ppb     ! SO2
 
+        ! CS(1, hh_index) = 0.001_dp
+        ! CS(2, hh_index) = 0.001_dp
         call chemistry_step(conc(1:neq, hh_index), time, time+dt_chem            , &
                            O2(hh_index), N2(hh_index), M(hh_index), H2O(hh_index), &
                            temp(hh_index), exp_coszen                            , &
@@ -324,11 +330,6 @@ DO WHILE (time <= time_end)
         ! Compute coagulation
         call coagulation(dt_aero, particle_conc, diameter, temp(hh_index), pres(hh_index), particle_mass)
 
-        ! Compute deposition
-        ! call dry_dep_velocity(diameter, particle_density, temperature, pressure, DSWF, &
-        ! Richards_nr10m, wind_speed10m, v_dep, vd_SO2, vd_O3)
-        ! particle_conc = particle_conc * exp(-v_dep / mixing_height * timestep)  ! Particle dry deposition losses
-
         ! Store Condensation Sink (CS) for H2SO4 and ELVOC at different altitudes
         CS(1, hh_index) = cond_sink(1)   ! CS for H2SO4
         CS(2, hh_index) = cond_sink(2)   ! CS for ELVOC
@@ -340,17 +341,8 @@ DO WHILE (time <= time_end)
 
     ! Trick to make bottom flux zero
     particle_conc_hh(1:nr_bins, 1) = particle_conc_hh(1:nr_bins, 2)
-    ! particle_conc_hh(1:nr_bins, nz) = 1.0_dp
     ! Mixing of aerosol particles
     particle_conc_hh_new = 0.0_dp
-    ! do i=1, nr_bins
-    !     do hh_index=2, nz-1
-    !       particle_conc_hh_new(i, hh_index) = particle_conc_hh(i, hh_index) + dt * ( &
-    !       K_h(hh_index) * (particle_conc_hh(i, hh_index+1) - particle_conc_hh(i, hh_index)) / (hh(hh_index+1) - hh(hh_index)) - &
-    !       K_h(hh_index-1) * (particle_conc_hh(i, hh_index) - particle_conc_hh(i, hh_index-1)) / (hh(hh_index) - hh(hh_index-1))) / &
-    !       ((hh(hh_index+1) - hh(hh_index-1)) / 2.0_dp)                 
-    !     end do
-    ! end do
     do hh_index=2, nz-1
       particle_conc_hh_new(:, hh_index) = particle_conc_hh(:, hh_index) + dt * ( &
       K_h(hh_index) * (particle_conc_hh(:, hh_index+1) - particle_conc_hh(:, hh_index)) / (hh(hh_index+1) - hh(hh_index)) - &
@@ -427,7 +419,7 @@ subroutine open_files()
   open(14,file=trim(adjustl(output_dir))//'/Kh.dat'   ,status='replace',action='write')
   open(15,file=trim(adjustl(output_dir))//'/Ri.dat'   ,status='replace',action='write')
   open(16,file=trim(adjustl(output_dir))//'/Emissions.dat'   ,status='replace',action='write')
-  open(17,file=trim(adjustl(output_dir))//'/Concentrations_h10.dat', status='replace',action='write')
+  open(17,file=trim(adjustl(output_dir))//'/Concentrations.dat', status='replace',action='write')
   open(18,file=trim(adjustl(output_dir))//'/Concentrations_h50.dat', status='replace',action='write')
   open(19,file=trim(adjustl(output_dir))//'/Concentrations_h500.dat', status='replace',action='write')
   open(20,file=trim(adjustl(output_dir))//'/Concentrations_h2000.dat', status='replace',action='write')
@@ -445,7 +437,7 @@ end subroutine open_files
 !-----------------------------------------------------------------------------------------
 subroutine write_files(time)
   real(dp) :: time  ! current time
-  character(255) :: outfmt_one_scalar, outfmt_two_scalar, outfmt_level, outfmt_mid_level, outfmt_level_bins
+  character(255) :: outfmt_one_scalar, outfmt_two_scalar, outfmt_level, outfmt_mid_level, outfmt_level_bins, outfmt_level_species
 
   ! Output real data with scientific notation with 16 decimal digits
   outfmt_one_scalar = '(es25.16e3)'                               ! for scalar
@@ -453,6 +445,7 @@ subroutine write_files(time)
   write(outfmt_mid_level , '(a, i3, a)') '(', nz-1, 'es25.16e3)'  ! for middle levels
   write(outfmt_two_scalar, '(a, i3, a)') '(', 2   , 'es25.16e3)'  ! for two scalars
   write(outfmt_level_bins, '(a, i3, a)') '(', nr_bins  , 'es25.16e3)'  ! for first level with aerosol
+  write(outfmt_level_species, '(a, i3, a)') '(', neq , 'es25.16e3)' ! for all species all altitude levels
 
 
   ! Only output hh once
@@ -469,7 +462,8 @@ subroutine write_files(time)
   write(14, outfmt_level     ) K_h
   write(15, outfmt_level     ) Ri_a
   write(16, *                ) F_veg_isoprene(2), F_veg_monoterpene(2)
-  write(17, outfmt_level     ) conc(:,2)
+  ! conc (species, altitude)
+  write(17, outfmt_level_species) conc(:,:)
   write(18, outfmt_level     ) conc(:,6)
   write(19, outfmt_level     ) conc(:,23)
   write(20, outfmt_level     ) conc(:,40)

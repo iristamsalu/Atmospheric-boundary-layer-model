@@ -318,6 +318,19 @@ SUBROUTINE dry_dep_velocity(diameter,particle_density,temperature,pressure,DSWF,
               H_effSO2, H_effO3, H_effHNO3, H_effisoprene, H_effapinene, &
               f0_SO2, f0_O3, f0_HNO3, f0_isoprene, f0_apinene, &
               rclSO2, rclO3, rgsSO2, rgsO3
+
+  real(dp) :: r_a, &        ! r_a - aerodynamic resistance, 
+              r_b, &        ! r_b - quasi-laminar layer resitance 
+              r_c, &        ! surface (canopy) resistance
+              sed_v, &      ! sediment velocity
+              r_a_stab, &   ! aerodynamic resistance in stable conditions
+              r_a_neut, &   ! aerodynamic resistance in neutral conditions
+              r_a_unstab, & ! aerodynamic resistance in unstable conditions
+              surface_roughness, & ! Surface roughness 
+              friction_velocity, & ! Friction velocity
+  real(dp), parameter :: beeta = 7.8, & ! Högström, 1988
+                         gamma = 11.6   ! Högström, 1988
+
        
   dens_air = Mair*pressure/(Rg*temperature)    ! Air density (kg/m^3)
   dyn_visc = 1.8D-5*(temperature/298.)**0.85   ! dynamic viscosity of air (kg/(m*s))
@@ -340,11 +353,22 @@ SUBROUTINE dry_dep_velocity(diameter,particle_density,temperature,pressure,DSWF,
   gam = 11.6D0  ! When ka = 0.4 (Hogstrom, 1988)
 
   ! Calculate the particle sedimentation velocity:
+  sed_v = ((diameter**2) * (particle_density - dens_air) * grav * Cunninghams) / (18 * dyn_visc)
 
   ! Calculation of aerodynamic resistance for particles for:
+  ! diffusion_coef: diffusion coefficient for gases or particles
+  surface_roughness = diffusion_coef / (Karman)
+  friction_velocity = Karman * uwind / LOG(10_dp / surface_roughness)
+
   ! stable boundary layer (Ri>1D-6)
+  r_a_stab = (Prandtl * LOG(10_dp / surface_roughness) + beeta / Monin * (10_dp - surface_roughness)) / (Karman * friction_velocity)
+
   ! neutral boundary layer (abs(Ri)<1D-6
+  
+  r_a_neut = Prandtl * LOG(10_dp / surface_roughness)
+
   ! unstable boundary layer Ri<-1D-6
+  r_a_unstab = 
 
   ! Calculate the quasi-laminar resistance (rb) for particles:
 

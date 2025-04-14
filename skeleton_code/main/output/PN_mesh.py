@@ -1,50 +1,56 @@
 import numpy as np
 import matplotlib.pyplot as plt
-from matplotlib.colors import LinearSegmentedColormap
 
 # Load the data from PN.dat
 PN_coag = np.loadtxt('PN.dat')
+num_height_levels = PN_coag.shape[1]
 
 # Define the time and height axes
-time = np.linspace(0, 120, 121) / 24  # Time in days
-height = np.linspace(0, 3000, PN_coag.shape[1])  # Height in meters, assuming linear spacing
+time_total_hours = np.linspace(0, 120, PN_coag.shape[0]) # Total time in hours
+time_days = time_total_hours / 24.0 # Time in days
+height_file = np.loadtxt('hh.dat')
+height = height_file[:]
 
-# Select the time range of interest
-time_start = 72  # Index corresponding to 3 days (72 hours)
-time_end = -1    # Use all time steps
+# Select the time range indices corresponding to Day 3.0 to Day 5.0
+time_start_day = 3.0
+time_end_day = 5.0
+idx_start = np.abs(time_days - time_start_day).argmin()
+idx_end = np.abs(time_days - time_end_day).argmin()
 
-# Extract the data for the selected time range
-PN_data = PN_coag[time_start:time_end, :]
+# Extract the data and time for the selected range
+PN_data_selected = PN_coag[idx_start:idx_end+1, :]
+time_days_selected = time_days[idx_start:idx_end+1]
 
-# Define the custom colormap
-colors = ["#00008B", "#0000FF", "#00FFFF", "#7CFC00", "#FFFF00", "#FF7F00", "#FF0000", "#8B0000"]  # Colors from the image
-cmap = LinearSegmentedColormap.from_list("mycmap", colors, N=256)
+# Create meshgrid for contour plot
+T, H = np.meshgrid(time_days_selected, height)
 
-# Create the heatmap plot
-plt.figure(figsize=(10, 8))
-im = plt.imshow(PN_data.T, extent=[time[time_start], time[-1], height[0], height[-1]],
-           aspect='auto', origin='lower', cmap=cmap, vmin=0, vmax=3.75e4)  # Set vmin and vmax
+# Define contour levels based on the example colorbar
+levels = [0, 1000, 10000, 20000, 30000, 32000, 34000, 36000, 38000]
+# Use 'viridis' colormap which is similar to the example
+cmap = plt.get_cmap('viridis')
+
+# Calculate the actual maximum value in the selected data range
+max_val = PN_data_selected.max()
+
+# Create the contour plot
+plt.figure(figsize=(8, 6)) # Adjusted figure size slightly
+cf = plt.contourf(T, H, PN_data_selected.T, levels=levels, cmap=cmap, extend='max') # Use extend='max' for values above the last level
 
 # Add labels and title
-plt.xlabel("Time (days)")
+plt.xlabel("Day (d)")
 plt.ylabel("Height (m)")
-plt.title("Total particle number concentration (sim with nucleation, condensation and coagulation sink)")
+# Add title and max value annotation
+plt.title(f"Total particle number concentration\nmax={max_val:.2e}", loc='center')
+
 
 # Add colorbar
-cbar = plt.colorbar(im, label=r"PN ($\mathrm{cm}^{-3}$) $\times 10^4$")
+cbar = plt.colorbar(cf, ticks=levels) # Set ticks explicitly
+cbar.set_label(r"PN (# cm$^{-3}$)") # Use LaTeX for units
 
-# Set the colorbar ticks and labels
-cbar.formatter = plt.FuncFormatter(lambda x, p: format(x/1e4, ".1f"))
-cbar.update_ticks()
-
-# Set the colorbar ticks
-cbar.set_ticks(np.linspace(0, 3.75e4, 9))  # Set 9 ticks from 0 to 3.75e4
-cbar.set_ticklabels([str(i/2) for i in range(9)]) # Set the tick labels from 0 to 4 with a 0.5 step
-
-# Set the x and y axis limits
-plt.xlim(3, 5)
+# Set the x and y axis limits (matching the selected data range)
+plt.xlim(time_start_day, time_end_day)
 plt.ylim(0, 3000)
 
 # Show the plot
-plt.tight_layout()
+plt.tight_layout(rect=[0, 0, 1, 0.95]) # Adjust layout to prevent title overlap
 plt.savefig("PN_heatmap.png")

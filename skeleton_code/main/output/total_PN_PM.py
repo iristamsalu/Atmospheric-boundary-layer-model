@@ -11,8 +11,8 @@ height = [0, 10, 20, 30, 40, 50, 60, 70, 80, 90,
 
 PN_all = np.loadtxt('PN_coag.dat')
 PM_all = np.loadtxt('PM_coag.dat')
-PN_cond = np.loadtxt('PN.dat')
-PM_cond = np.loadtxt('PM.dat')
+PN_cond = np.loadtxt('PN_cond.dat')
+PM_cond = np.loadtxt('PM_cond.dat')
 
 PN_all_day5 = PN_all[-1]
 PM_all_day5 = PM_all[-1]
