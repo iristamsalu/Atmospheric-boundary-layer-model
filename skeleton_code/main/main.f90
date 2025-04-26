@@ -21,7 +21,7 @@ implicit none
 !-----------------------------------------------------------------------------------------
 logical :: use_emission   = .true.
 logical :: use_chemistry  = .true.
-logical :: use_deposition = .false.
+logical :: use_deposition = .true.
 logical :: use_aerosol    = .true.
 character(len=255), parameter :: input_dir  = './input'
 character(len=255), parameter :: output_dir = './output'
@@ -142,6 +142,14 @@ real(dp), dimension(nz) :: PN_hh, PV_hh, PM_hh
 integer, parameter :: nr_bins=100 
 
 !-----------------------------------------------------------------------------------------
+! Deposition variables (local to main loop scope)
+!-----------------------------------------------------------------------------------------
+real(dp) :: wind_speed10m         ! Calculated wind speed at 10m for deposition call
+real(dp) :: Richards_nr10m        ! Richardson number for deposition call
+real(dp) :: DSWF                  ! Downward Shortwave Flux
+
+
+!-----------------------------------------------------------------------------------------
 ! Initialization
 !-----------------------------------------------------------------------------------------
 
@@ -240,13 +248,37 @@ DO WHILE (time <= time_end)
   ! Compute deposition part every dt_depo, multiplying 1000 to convert s to ms to make mod easier
   if ( use_deposition .and. time >= time_start_deposition ) then
     if ( mod( nint((time - time_start_deposition)*1000.0d0), nint(dt_depo*1000.0d0) ) == 0 ) then
-      ! Calculate deposition velocity
-      ! Compute deposition
-      ! call dry_dep_velocity(diameter, particle_density, temperature, pressure, DSWF, &
-      ! Richards_nr10m, wind_speed10m, v_dep, vd_SO2, vd_O3)
-      ! particle_conc = particle_conc * exp(-v_dep / mixing_height * timestep)  ! Particle dry deposition losses
 
-      ! Remove deposited concentration at level 2 which includes canopy and soil
+      ! Wind speed magnitude at level 2 (10m)
+      wind_speed10m = sqrt(uwind(2)**2 + vwind(2)**2)
+
+      ! Richardson number at level 2 (10m)
+      if (model_v == 3) then
+         Richards_nr10m = Ri_a(2)
+      else
+         ! if Ri not calculated
+         Richards_nr10m = 0.0_dp 
+      end if
+
+      ! Downward Shortwave Flux ???
+      DSWF = 400.0_dp * get_exp_coszen(time, daynumber, latitude)
+
+      ! Calculate deposition velocity for particles and gases
+      call dry_dep_velocity(temp(2), pres(2), DSWF, Richards_nr10m, wind_speed10m, vd_gas, vd_particle)
+
+      if (use_aerosol) then
+        do i = 1, nr_bins
+          ! Update particle concentrations by removing deposited particles at level 2 which includes canopy and soil
+          particle_conc_hh(i, 2) = particle_conc_hh(i, 2) * exp(-vd_particle(i) / hh(2) * dt_depo)
+        end do
+      end if
+      
+      ! Update gas concentrations by removing deposited gases at level 2
+      conc(20, 2) = conc(20, 2) * exp(-vd_gas(1) / hh(2) * dt_depo)  ! SO2
+      conc( 1, 2) = conc( 1, 2) * exp(-vd_gas(2) / hh(2) * dt_depo)  ! O3
+      conc(17, 2) = conc(17, 2) * exp(-vd_gas(3) / hh(2) * dt_depo)  ! HNO3
+      conc(13, 2) = conc(13, 2) * exp(-vd_gas(4) / hh(2) * dt_depo)  ! isoprene
+      conc(23, 2) = conc(23, 2) * exp(-vd_gas(5) / hh(2) * dt_depo)  ! apinene
     end if
   end if
 
@@ -427,6 +459,8 @@ subroutine open_files()
   open(22,file=trim(adjustl(output_dir))//'/PV.dat', status='replace',action='write')
   open(23,file=trim(adjustl(output_dir))//'/PM.dat', status='replace',action='write')
   open(24,file=trim(adjustl(output_dir))//'/particle_conc.dat', status='replace',action='write')
+  open(25,file=trim(adjustl(output_dir))//'/dep_v_gas.dat', status='replace',action='write')
+  open(26,file=trim(adjustl(output_dir))//'/dep_v_particle.dat', status='replace',action='write')
 end subroutine open_files
 
 
@@ -471,6 +505,8 @@ subroutine write_files(time)
   write(22, outfmt_level     ) PV_hh
   write(23, outfmt_level     ) PM_hh
   write(24, outfmt_level_bins) particle_conc_hh(:,1)
+  write(25, outfmt_level     ) vd_gas
+  write(26, outfmt_level_bins) vd_particle
 
 end subroutine write_files
 
@@ -498,6 +534,8 @@ subroutine close_files()
   close(22)
   close(23)
   close(24)
+  close(25)
+  close(26)
 end subroutine close_files
 
 
