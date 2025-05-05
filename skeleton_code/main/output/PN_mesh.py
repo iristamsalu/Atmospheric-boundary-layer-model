@@ -2,7 +2,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 
 # Load the data from PN.dat
-PN_coag = np.loadtxt('PN.dat')
+PN_coag = np.loadtxt('PN_dep.dat')
 num_height_levels = PN_coag.shape[1]
 
 # Define the time and height axes
@@ -53,4 +53,4 @@ plt.ylim(0, 3000)
 
 # Show the plot
 plt.tight_layout(rect=[0, 0, 1, 0.95]) # Adjust layout to prevent title overlap
-plt.savefig("PN_heatmap_depo2.png")
+plt.savefig("PN_heatmap_depo.png")

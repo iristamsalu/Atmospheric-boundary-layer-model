@@ -147,7 +147,9 @@ integer, parameter :: nr_bins=100
 real(dp) :: wind_speed10m         ! Calculated wind speed at 10m for deposition call
 real(dp) :: Richards_nr10m        ! Richardson number for deposition call
 real(dp) :: DSWF                  ! Downward Shortwave Flux
-
+real(dp) :: current_hourangle, current_zenith, current_coszen
+real(dp), parameter :: solar_constant = 1361.0_dp ! [W/m^2], Extraterrestrial solar flux
+real(dp), parameter :: optical_depth_simple = 0.575_dp ! Simple optical depth from get_exp_coszen
 
 !-----------------------------------------------------------------------------------------
 ! Initialization
@@ -260,8 +262,20 @@ DO WHILE (time <= time_end)
          Richards_nr10m = 0.0_dp 
       end if
 
-      ! Downward Shortwave Flux ???
-      DSWF = 400.0_dp * get_exp_coszen(time, daynumber, latitude)
+      ! Calculate Downward Shortwave Flux (DSWF)
+      ! Calculate cosine of solar zenith angle using existing functions
+      current_hourangle = get_hourangle(time)
+      current_zenith = solar_zenith_angle(current_hourangle, daynumber, latitude)
+      current_coszen = cos(current_zenith)
+      ! Clear-Sky DSWF
+      if (current_coszen > 0.0_dp) then
+          ! DSWF = Solar_Constant * cos(zenith) * Transmission_Factor
+          ! Using the simple transmission factor exp(-optical_depth / cos(zenith))
+          DSWF = solar_constant * current_coszen * exp(-optical_depth_simple / current_coszen)
+      else
+          ! Night time
+          DSWF = 0.0_dp
+      end if
 
       ! Calculate deposition velocity for particles and gases
       call dry_dep_velocity(temp(2), pres(2), DSWF, Richards_nr10m, wind_speed10m, vd_gas, vd_particle)
@@ -458,9 +472,10 @@ subroutine open_files()
   open(21,file=trim(adjustl(output_dir))//'/PN.dat', status='replace',action='write')
   open(22,file=trim(adjustl(output_dir))//'/PV.dat', status='replace',action='write')
   open(23,file=trim(adjustl(output_dir))//'/PM.dat', status='replace',action='write')
-  open(24,file=trim(adjustl(output_dir))//'/particle_conc.dat', status='replace',action='write')
-  open(25,file=trim(adjustl(output_dir))//'/dep_v_gas.dat', status='replace',action='write')
-  open(26,file=trim(adjustl(output_dir))//'/dep_v_particle.dat', status='replace',action='write')
+  open(24,file=trim(adjustl(output_dir))//'/particle_conc_10.dat', status='replace',action='write')
+  open(25,file=trim(adjustl(output_dir))//'/particle_conc_2000.dat', status='replace',action='write')
+  open(26,file=trim(adjustl(output_dir))//'/dep_v_gas.dat', status='replace',action='write')
+  open(27,file=trim(adjustl(output_dir))//'/dep_v_particle.dat', status='replace',action='write')
 end subroutine open_files
 
 
@@ -504,9 +519,10 @@ subroutine write_files(time)
   write(21, outfmt_level     ) PN_hh
   write(22, outfmt_level     ) PV_hh
   write(23, outfmt_level     ) PM_hh
-  write(24, outfmt_level_bins) particle_conc_hh(:,1)
-  write(25, outfmt_level     ) vd_gas
-  write(26, outfmt_level_bins) vd_particle
+  write(24, outfmt_level_bins) particle_conc_hh(:,2) ! 10 m
+  write(25, outfmt_level_bins) particle_conc_hh(:,40) ! 2000 m
+  write(26, outfmt_level     ) vd_gas
+  write(27, outfmt_level_bins) vd_particle
 
 end subroutine write_files
 
@@ -536,6 +552,7 @@ subroutine close_files()
   close(24)
   close(25)
   close(26)
+  close(27)
 end subroutine close_files
 
 
