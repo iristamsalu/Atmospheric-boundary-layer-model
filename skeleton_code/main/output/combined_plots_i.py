@@ -1,94 +1,110 @@
 import numpy as np
 import matplotlib.pyplot as plt
 import matplotlib.colors as mcolors
+import matplotlib.ticker as mticker
 
-# --- Load Data for PN ---
-PN_coag = np.loadtxt('PN_dep.dat')
-num_height_levels = PN_coag.shape[1]
+# File paths
+files = {
+    "diameter": "diameter.dat",
+    "conc_10m": "particle_conc_10.dat",
+    "conc_2000m": "particle_conc_2000.dat",
+    "pn": "PN.dat",
+    "pm": "PM.dat",
+    "height": "hh.dat",
+}
 
-# Define the time and height axes for PN
-time_total_hours = np.linspace(0, 120, PN_coag.shape[0])  # Total time in hours
-time_days = time_total_hours / 24.0  # Time in days
-height_file = np.loadtxt('hh.dat')
-height = height_file[:]
+# Time settings
+total_steps = 121
+time_days = np.linspace(0.0, 5.0, total_steps)
+day_times = {
+    "Day 4": {'00:00': 72, '06:00': 78, '12:00': 84, '18:00': 90, '24:00': 96},
+    "Day 5": {'00:00': 96, '06:00': 102, '12:00': 108, '18:00': 114, '24:00': 120}
+}
+styles = {
+    '00:00': {'color': 'purple', 'marker': 'o', 'linestyle': 'None', 'mfc': 'none'}, 
+    '06:00': {'color': 'cyan', 'linestyle': 'dotted'},
+    '12:00': {'color': 'lightgreen', 'linestyle': 'dashed'},
+    '18:00': {'color': 'orange', 'linestyle': '-.'},
+    '24:00': {'color': 'red', 'linestyle': 'solid'}
+}
 
-# Select the time range indices corresponding to Day 3.0 to Day 5.0 for PN
-time_start_day = 3.0
-time_end_day = 5.0
-idx_start = np.abs(time_days - time_start_day).argmin()
-idx_end = np.abs(time_days - time_end_day).argmin()
+# Heatmap settings
+psd_levels = [1, 10, 100, 500, 1000, 5000, 10000, 20000, 40000, 80000]
+pn_levels = [0, 1e3, 1e4, 2e4, 3e4, 3.2e4, 3.4e4, 3.6e4, 3.8e4]
+pm_levels = [0.000, 1.200, 1.225, 1.250, 1.275, 1.300, 1.325, 1.350]
+cmap = {'psd': 'jet', 'pn': 'viridis', 'pm': 'viridis'}
+psd_norm = mcolors.LogNorm(vmin=min(psd_levels), vmax=max(psd_levels))
+pm_norm = mcolors.BoundaryNorm(pm_levels, plt.get_cmap(cmap['pm']).N)
 
-# Extract the data and time for the selected range for PN
-PN_data_selected = PN_coag[idx_start:idx_end+1, :]
-time_days_selected = time_days[idx_start:idx_end+1]
+# Load data 
+diameter_nm = np.loadtxt(files["diameter"]) * 1e9
+psd_data = {
+    "10 m": np.loadtxt(files["conc_10m"]) / 1e6,
+    "2000 m": np.loadtxt(files["conc_2000m"]) / 1e6
+}
+PN = np.loadtxt(files["pn"])
+PM = np.loadtxt(files["pm"])
+height = np.loadtxt(files["height"])
 
-# Create meshgrid for contour plot for PN
-T, H = np.meshgrid(time_days_selected, height)
+# Time slicing for heatmaps
+t_start, t_end = 3.0, 5.0
+i_start = np.abs(time_days - t_start).argmin()
+i_end = np.abs(time_days - t_end).argmin()
+time_hm = time_days[i_start:i_end+1]
+T_h, H_h = np.meshgrid(time_hm, height)
+PN_sel = PN[i_start:i_end+1, :]
+PM_sel = PM[i_start:i_end+1, :]
 
-# Define contour levels for PN based on the example colorbar
-levels_PN = [0, 1000, 10000, 20000, 30000, 32000, 34000, 36000, 38000]
-cmap_PN = plt.get_cmap('viridis')
+# Plot setup
+fig, axs = plt.subplots(3, 3, figsize=(18, 15))
 
-# Calculate the actual maximum value in the selected data range for PN
-max_val_PN = PN_data_selected.max()
+# 1. PSD Heatmaps
+for i, (label, data) in enumerate(psd_data.items()):
+    ax = axs[i, 0]
+    T, D = np.meshgrid(time_hm, diameter_nm)
+    cs = ax.contourf(T, D, data[i_start:i_end+1].T, 
+                     levels=psd_levels, norm=psd_norm, cmap=cmap['psd'], extend='max')
+    
+    ax.set(yscale='log', xlabel='Day (d)', ylabel='Diameter (nm)', 
+           title=f'Particle size distribution\nat {label}', xlim=(t_start, t_end), ylim=(1, 1000))
+    ax.yaxis.set_major_locator(mticker.LogLocator(base=10))
+    ax.yaxis.set_major_formatter(mticker.FormatStrFormatter('%g'))
+    ax.yaxis.set_minor_locator(mticker.NullLocator())
+    ax.tick_params(labelsize=8)
+    
+    cbar = fig.colorbar(cs, ax=ax, format='%g')
+    cbar.set_label('dN/dlog$_{10}$Dp (# cm$^{-3}$)', size=9)
+    cbar.ax.tick_params(labelsize=8)
 
-# --- Load Data for PM ---
-PM = np.loadtxt('PM_dep.dat')
-num_height_levels_PM = PM.shape[1]
+# 2. PSD Line Plots
+for i, (label, data) in enumerate(psd_data.items()):
+    for j, (day, times) in enumerate(day_times.items(), start=1):
+        ax = axs[i, j]
+        for time_label, idx in times.items():
+            s = styles[time_label]
+            ax.plot(diameter_nm, data[idx], label=time_label, 
+                    color=s['color'], linestyle=s.get('linestyle', '-'), 
+                    marker=s.get('marker', None), mfc=s.get('mfc', 'none'),
+                    mec=s['color'], linewidth=1.2, markersize=4)
+        ax.set(xscale='log', yscale='log', xlabel='Diameter (nm)', ylabel='N (# cm$^{-3}$)',
+               title=f'{day} at {label}', xlim=(1, 1000), ylim=(1, 1e5))
+        ax.grid(True, which="both", ls="--", alpha=0.5)
+        ax.legend(fontsize=7, title="Time")
+        ax.tick_params(labelsize=8)
 
-# Define the time and height axes for PM
-time_total_hours_PM = np.linspace(0, 120, PM.shape[0])  # Total time in hours
-time_days_PM = time_total_hours_PM / 24.0  # Time in days
-height_file_PM = np.loadtxt('hh.dat')
-height_PM = height_file_PM[:]
+# 3. PN and PM Heatmaps
+for col, (data, levels, cmap_name, norm, label, title) in enumerate([
+    (PN_sel, pn_levels, cmap['pn'], None, 'PN (# cm$^{-3}$)', f'PN Concentration \nmax={PN_sel.max():.2e}'),
+    (PM_sel, pm_levels, cmap['pm'], pm_norm, 'PM (μg/m³)', f'PM Concentration \nmax={PM_sel.max():.2e}')
+]):
+    ax = axs[2, col]
+    cf = ax.contourf(T_h, H_h, data.T, levels=levels, cmap=cmap_name, norm=norm, extend='max')
+    ax.set(xlabel='Day (d)', ylabel='Height (m)', title=title, xlim=(t_start, t_end), ylim=(0, 3000))
+    ax.tick_params(labelsize=8)
+    cbar = fig.colorbar(cf, ax=ax, ticks=levels)
+    cbar.set_label(label, size=9)
+    cbar.ax.tick_params(labelsize=8)
 
-# Select the time range indices corresponding to Day 3.0 to Day 5.0 for PM
-idx_start_PM = np.abs(time_days_PM - time_start_day).argmin()
-idx_end_PM = np.abs(time_days_PM - time_end_day).argmin()
-
-# Extract the data and time for the selected range for PM
-PM_data_selected = PM[idx_start_PM:idx_end_PM+1, :]
-time_days_selected_PM = time_days_PM[idx_start_PM:idx_end_PM+1]
-
-# Create meshgrid for contour plot for PM
-T_PM, H_PM = np.meshgrid(time_days_selected_PM, height_PM)
-
-# Define contour levels for PM based on the example colorbar
-levels_PM = [0.000, 1.200, 1.225, 1.250, 1.275, 1.300, 1.325, 1.350]
-cmap_PM = plt.get_cmap('viridis')
-norm_PM = mcolors.BoundaryNorm(levels_PM, cmap_PM.N)  # Ensure color boundaries match
-
-# Calculate the actual maximum value in the selected data range for PM
-max_val_PM = PM_data_selected.max()
-
-# --- Plotting PN and PM Contour Plots in Subplots ---
-fig, axs = plt.subplots(1, 2, figsize=(16, 6))
-
-# Plot PN heatmap
-cf_PN = axs[0].contourf(T, H, PN_data_selected.T, levels=levels_PN, cmap=cmap_PN, extend='max')
-axs[0].set_xlabel("Day (d)")
-axs[0].set_ylabel("Height (m)")
-axs[0].set_title(f"Total Particle Number Concentration\nmax={max_val_PN:.2e}", loc='center')
-axs[0].set_xlim(time_start_day, time_end_day)
-axs[0].set_ylim(0, 3000)
-
-# Plot PM heatmap
-cf_PM = axs[1].contourf(T_PM, H_PM, PM_data_selected.T, levels=levels_PM, cmap=cmap_PM, norm=norm_PM, extend='max')
-axs[1].set_xlabel("Day (d)")
-axs[1].set_ylabel("Height (m)")
-axs[1].set_title(f"Total Particle Mass Concentration\nmax={max_val_PM:.2e}", loc='center')
-axs[1].set_xlim(time_start_day, time_end_day)
-axs[1].set_ylim(0, 3000)
-
-# Add colorbars
-cbar_PN = plt.colorbar(cf_PN, ax=axs[0], ticks=levels_PN)
-cbar_PN.set_label(r"PN (# cm$^{-3}$)")  # Use LaTeX for units
-
-cbar_PM = plt.colorbar(cf_PM, ax=axs[1], ticks=levels_PM)
-cbar_PM.set_label(r"PM ($\mu g/m^{-3}$)")  # Use LaTeX for units
-
-# Adjust layout to avoid title overlap
-plt.tight_layout(rect=[0, 0, 1, 0.95])  # Adjust layout to prevent title overlap
-
-# Save the figure
-plt.savefig("combined_plots_i.png")
+axs[2, 2].axis('off')
+plt.tight_layout(rect=[0, 0.03, 1, 0.96])
+plt.savefig("combined_plots_i.png", dpi=300)

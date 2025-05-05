@@ -2,18 +2,17 @@ import numpy as np
 import matplotlib.pyplot as plt
 import matplotlib.ticker as ticker
 
-# --- Load Data ---
-
+# Load sata
 # PN and PM
 PN_cond = np.loadtxt('PN_cond.dat')
 PN_coag = np.loadtxt('PN_coag.dat')
 PN_coag_cs = np.loadtxt('PN_coag_cs10-4.dat')
-PN_dep = np.loadtxt('PN_dep.dat')
+PN_dep = np.loadtxt('PN.dat')
 
 PM_cond = np.loadtxt('PM_cond.dat')
 PM_coag = np.loadtxt('PM_coag.dat')
 PM_coag_cs = np.loadtxt('PM_coag_cs10-4.dat')
-PM_dep = np.loadtxt('PM_dep.dat')
+PM_dep = np.loadtxt('PM.dat')
 
 # Deposition velocity
 vd_particle = np.loadtxt('dep_v_particle.dat')
@@ -28,8 +27,7 @@ height = [0, 10, 20, 30, 40, 50, 60, 70, 80, 90,
           1100, 1200, 1300, 1400, 1500, 1600, 1700, 1800, 1900, 2000,
           2100, 2200, 2300, 2400, 2500, 2600, 2700, 2800, 2900, 3000]
 
-# --- Extract Relevant Data ---
-
+# Extract relevant data
 # PN vertical (day 5)
 PN_cond_day5 = PN_cond[-1] * 1e-5
 PN_coag_day5 = PN_coag[-1] * 1e-5
@@ -72,8 +70,7 @@ vd_isoprene = vd_gas[:, 3]
 vd_apinene = vd_gas[:, 4]
 vd_particle_last = vd_particle[-1]
 
-# --- Plotting ---
-
+# Plotting
 fig, axs = plt.subplots(3, 2, figsize=(16, 14))
 
 # 1. PN Vertical Profile
@@ -162,7 +159,6 @@ axs[2, 1].set_ylabel("Velocity (m/s)")
 axs[2, 1].grid(True, which="both", linestyle="--", linewidth=0.5)
 axs[2, 1].legend()
 
-# --- Final Touches ---
 plt.suptitle("Particle and Gas Processes Overview", fontsize=18)
 plt.tight_layout(rect=[0, 0.03, 1, 0.97])
 plt.savefig("combined_plots_ii.png")
