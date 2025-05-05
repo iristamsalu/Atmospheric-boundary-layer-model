@@ -148,8 +148,7 @@ real(dp) :: wind_speed10m         ! Calculated wind speed at 10m for deposition 
 real(dp) :: Richards_nr10m        ! Richardson number for deposition call
 real(dp) :: DSWF                  ! Downward Shortwave Flux
 real(dp) :: current_hourangle, current_zenith, current_coszen
-real(dp), parameter :: solar_constant = 1361.0_dp ! [W/m^2], Extraterrestrial solar flux
-real(dp), parameter :: optical_depth_simple = 0.575_dp ! Simple optical depth from get_exp_coszen
+real(dp), parameter :: solar_constant = 1361.0_dp ! [W/m2], extraterrestrial solar flux
 
 !-----------------------------------------------------------------------------------------
 ! Initialization
@@ -263,19 +262,14 @@ DO WHILE (time <= time_end)
       end if
 
       ! Calculate Downward Shortwave Flux (DSWF)
-      ! Calculate cosine of solar zenith angle using existing functions
+      ! Calculate cosine of solar zenith angle
+      exp_coszen = get_exp_coszen(time, daynumber, latitude)
       current_hourangle = get_hourangle(time)
       current_zenith = solar_zenith_angle(current_hourangle, daynumber, latitude)
       current_coszen = cos(current_zenith)
-      ! Clear-Sky DSWF
-      if (current_coszen > 0.0_dp) then
-          ! DSWF = Solar_Constant * cos(zenith) * Transmission_Factor
-          ! Using the simple transmission factor exp(-optical_depth / cos(zenith))
-          DSWF = solar_constant * current_coszen * exp(-optical_depth_simple / current_coszen)
-      else
-          ! Night time
-          DSWF = 0.0_dp
-      end if
+      ! Clear-Sky DSWF, DSWF = solar_constant * cos(zenith) * transmission_factor??
+      DSWF = solar_constant * current_coszen * exp_coszen
+      ! DSWF = 486.66_dp * exp_coszen ! [W m-2]
 
       ! Calculate deposition velocity for particles and gases
       call dry_dep_velocity(temp(2), pres(2), DSWF, Richards_nr10m, wind_speed10m, vd_gas, vd_particle)
