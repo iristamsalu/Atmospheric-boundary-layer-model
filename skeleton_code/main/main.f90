@@ -312,8 +312,9 @@ DO WHILE (time <= time_end)
         conc(11, hh_index) = 1759.0d0 * M(hh_index) * ppb     ! CH4
         conc(20, hh_index) = 0.5d0    * M(hh_index) * ppb     ! SO2
 
-        ! CS(1, hh_index) = 0.001_dp
-        ! CS(2, hh_index) = 0.001_dp
+
+        ! CS(1, hh_index) = 0.001_dp  ! CS for H2SO4
+        ! CS(2, hh_index) = 0.001_dp  ! CS for ELVOC
         call chemistry_step(conc(1:neq, hh_index), time, time+dt_chem            , &
                            O2(hh_index), N2(hh_index), M(hh_index), H2O(hh_index), &
                            temp(hh_index), exp_coszen                            , &
@@ -459,7 +460,8 @@ subroutine open_files()
   open(14,file=trim(adjustl(output_dir))//'/Kh.dat'   ,status='replace',action='write')
   open(15,file=trim(adjustl(output_dir))//'/Ri.dat'   ,status='replace',action='write')
   open(16,file=trim(adjustl(output_dir))//'/Emissions.dat'   ,status='replace',action='write')
-  open(17,file=trim(adjustl(output_dir))//'/Concentrations.dat', status='replace',action='write')
+!  open(17,file=trim(adjustl(output_dir))//'/Concentrations.dat', status='replace',action='write')
+  open(17,file=trim(adjustl(output_dir))//'/Concentrations_h10.dat', status='replace',action='write')
   open(18,file=trim(adjustl(output_dir))//'/Concentrations_h50.dat', status='replace',action='write')
   open(19,file=trim(adjustl(output_dir))//'/Concentrations_h500.dat', status='replace',action='write')
   open(20,file=trim(adjustl(output_dir))//'/Concentrations_h2000.dat', status='replace',action='write')
@@ -506,7 +508,8 @@ subroutine write_files(time)
   write(15, outfmt_level     ) Ri_a
   write(16, *                ) F_veg_isoprene(2), F_veg_monoterpene(2)
   ! conc (species, altitude)
-  write(17, outfmt_level_species) conc(:,:)
+  ! write(17, outfmt_level_species) conc(:,:)
+  write(17, outfmt_level     ) conc(:,6)
   write(18, outfmt_level     ) conc(:,6)
   write(19, outfmt_level     ) conc(:,23)
   write(20, outfmt_level     ) conc(:,40)
@@ -599,9 +602,9 @@ subroutine meteorology_init()
   vwind(nz) = vg
 
   ! Potential temperature
-  ! theta     = 273.15d0 + 0.0d0 winter
+  ! theta     = 273.15d0 + 0.0d0 ! winter
   theta     = 273.15d0 + 25.0d0  ! summer
-  !theta(nz) = 273.15d0 + 5.0d0 winter
+  ! theta(nz) = 273.15d0 + 5.0d0 ! winter
   theta(nz) = 273.15d0 + 30.0d0  ! summer
 
   ! Air temperature and pressure
@@ -625,7 +628,7 @@ subroutine surface_values(temperature, time)
   real(dp), intent(in)            :: time ! input, in seconds
   real(dp), intent(out)           :: temperature ! output, in Kelvin
   logical, save                   :: first_time = .true.
-  real(dp), dimension(8,50), save :: surface_data
+  real(dp), dimension(8,50), save :: surface_data ! summer
   ! real(dp), dimension(7,50), save :: surface_data ! winter
   real(dp), dimension(50), save   :: temperature_data
   real(dp), parameter             :: seconds_in_day = 24*60*60
@@ -640,6 +643,7 @@ subroutine surface_values(temperature, time)
     !  open(30, file=trim(adjustl(input_dir))//'/hyytiala_20110218-t_h2o.dat', status='old') ! winter
      read(30, *) surface_data
      temperature_data(1:50) = surface_data(7,1:50) ! in Celcius
+    !  temperature_data(1:50) = surface_data(7,1:50) + 40.0_dp! in Celcius
      first_time = .false.
   end if
 
@@ -716,9 +720,9 @@ ELSE IF (model_v == 3) THEN
                 ((theta(hh_index+1) - theta(hh_index)) / denom)   *  &
                 (hh(hh_index+1) - hh(hh_index))
     ! Fix Richardson number to reasonable bounds to avoid extremly low values
-    IF (Ri < -2.0_dp) THEN
-      Ri = -2.0_dp
-    END IF
+    ! IF (Ri < -1.5_dp) THEN
+    !   Ri = -1.5_dp
+    ! END IF
     
     ! calculate Dyer-Businger form
     ! unstable conditions

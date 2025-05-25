@@ -9,7 +9,7 @@ height = height.reshape(-1)
 time   = np.loadtxt('time.dat')     # Time steps
 time   = time * 24 
 
-Ri     = np.loadtxt('Ri_winter.dat')       # Ri values (only for 49 altidudes)
+Ri     = np.loadtxt('Ri.dat')       # Ri values (only for 49 altidudes)
 Ri = np.hstack([Ri, Ri[:, -1:]])    # Duplicate last column
 
 # Replace NaNs and clip extreme values
@@ -34,4 +34,4 @@ ax.set_ylabel('Altitude (m)')
 ax.set_title('SMEAR II 18.02.2011 \nRichardson number (Ri) with model v3')
 
 # Save and display
-p.savefig('Ri_winter.svg')
+p.savefig('Ri_summer.png')

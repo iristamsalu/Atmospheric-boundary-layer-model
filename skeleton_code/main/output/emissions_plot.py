@@ -1,7 +1,7 @@
 import numpy as np
 from matplotlib import pyplot as p
 
-data = np.loadtxt('Emissions_min5.dat')
+data = np.loadtxt('Emissions.dat')
 
 time = time_values = np.linspace(0.000, 5.000, 121)
 f_veg_iso = data[:, 0]
@@ -15,4 +15,4 @@ p.ylim(0)
 p.title('Emission rates')
 p.xlabel('Day')
 p.ylabel('Emission rate [molec cm-3 s-1]')
-p.savefig('Emissions_min5.png')
+p.savefig('Emissions.png')
