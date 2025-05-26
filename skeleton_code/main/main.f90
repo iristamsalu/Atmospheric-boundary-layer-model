@@ -21,8 +21,8 @@ implicit none
 !-----------------------------------------------------------------------------------------
 logical :: use_emission   = .true.
 logical :: use_chemistry  = .true.
-logical :: use_deposition = .true.
-logical :: use_aerosol    = .true.
+logical :: use_deposition = .false.
+logical :: use_aerosol    = .false.
 character(len=255), parameter :: input_dir  = './input'
 character(len=255), parameter :: output_dir = './output'
 integer :: model_v = 3   ! Model version (1, 2 or 3) for meteorology
@@ -307,8 +307,8 @@ DO WHILE (time <= time_end)
         conc(20, hh_index) = 0.5d0    * M(hh_index) * ppb     ! SO2
 
 
-        ! CS(1, hh_index) = 0.001_dp  ! CS for H2SO4
-        ! CS(2, hh_index) = 0.001_dp  ! CS for ELVOC
+        CS(1, hh_index) = 0.001_dp  ! CS for H2SO4
+        CS(2, hh_index) = 0.001_dp  ! CS for ELVOC
         call chemistry_step(conc(1:neq, hh_index), time, time+dt_chem            , &
                            O2(hh_index), N2(hh_index), M(hh_index), H2O(hh_index), &
                            temp(hh_index), exp_coszen                            , &
@@ -568,6 +568,7 @@ subroutine time_init()
 
   ! Day number
   daynumber_start = 31+28+31+30+31+30+10  ! day is July 10th, 2011
+  ! daynumber_start = 31+18   ! day is February 18th, 2011
   daynumber       = daynumber_start
 
   ! Start time for each process
