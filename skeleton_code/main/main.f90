@@ -21,7 +21,7 @@ implicit none
 !-----------------------------------------------------------------------------------------
 logical :: use_emission   = .true.
 logical :: use_chemistry  = .true.
-logical :: use_deposition = .true.
+logical :: use_deposition = .false.
 logical :: use_aerosol    = .true.
 character(len=255), parameter :: input_dir  = './input'
 character(len=255), parameter :: output_dir = './output'
@@ -51,13 +51,13 @@ real(dp), parameter :: ppb = 1e-9_dp
 
 real(dp), parameter :: ug = 10.0d0, vg = 0.0d0  ! [m s-1], geostrophic wind
 
-! Latitude and longitude of Hyytiala
-real(dp), parameter :: latitude_deg  = 61.8455d0  ! [degN]
-real(dp), parameter :: longitude_deg = 24.2833d0  ! [degE]
+! Latitude and longitude of Hyltemossa
+real(dp), parameter :: latitude_deg = 56.1d0 ! [degN]
+real(dp), parameter :: longitude_deg = 13.42d0 ! [degE]
 real(dp), parameter :: latitude      = latitude_deg  * PI/180.0d0  ! [rad]
 real(dp), parameter :: longitude     = longitude_deg * PI/180.0d0  ! [rad]
 
-real(dp), parameter :: fcor = 2*Omega*sin(latitude)  ! Coriolis parameter at Hyytiala
+real(dp), parameter :: fcor = 2*Omega*sin(latitude)  ! Coriolis parameter at Hyltemossa
 
 !-----------------------------------------------------------------------------------------
 ! Grid parameters
@@ -299,13 +299,12 @@ DO WHILE (time <= time_end)
         O2(hh_index)   = 0.21d0*M(hh_index)                                 ! Oxygen
         N2(hh_index)   = 0.78d0*M(hh_index)                                 ! Nitrogen
         H2O(hh_index)  = 1.0D16                                             ! Water
-        conc( 1, hh_index) = 24.0d0   * M(hh_index) * ppb     ! O3
+        conc( 1, hh_index) = 40.0d0   * M(hh_index) * ppb     ! O3
         conc( 5, hh_index) = 0.2d0    * M(hh_index) * ppb     ! NO2
         conc( 6, hh_index) = 0.07d0   * M(hh_index) * ppb     ! NO
-        conc( 9, hh_index) = 100.0d0  * M(hh_index) * ppb     ! CO
+        conc( 9, hh_index) = 200.0d0  * M(hh_index) * ppb     ! CO
         conc(11, hh_index) = 1759.0d0 * M(hh_index) * ppb     ! CH4
-        conc(20, hh_index) = 0.5d0    * M(hh_index) * ppb     ! SO2
-
+        conc(20, hh_index) = 2.0d0    * M(hh_index) * ppb     ! SO2
 
         ! CS(1, hh_index) = 0.001_dp  ! CS for H2SO4
         ! CS(2, hh_index) = 0.001_dp  ! CS for ELVOC
@@ -567,14 +566,14 @@ subroutine time_init()
   dt_output = 3600.0d0
 
   ! Day number
-  daynumber_start = 31+28+31+30+31+30+10  ! day is July 10th, 2011
+  daynumber_start = 31+28+31+6  ! day is April 6th, 2018
   daynumber       = daynumber_start
 
   ! Start time for each process
-  time_start_emission   = 3*24*one_hour
   time_start_chemistry  = 3*24*one_hour
   time_start_deposition = 3*24*one_hour
-  time_start_aerosol    = 3*24*one_hour
+  time_start_emission = 4.625*24*one_hour   ! emission starts at 4.625 days
+  time_start_aerosol  = 4*24*one_hour   ! aerosol starts at 4.0 days
 
   ! Loop number
   counter = 0
@@ -596,8 +595,8 @@ subroutine meteorology_init()
   vwind(nz) = vg
 
   ! Potential temperature
-  theta     = 273.15d0 + 25.0d0  ! summer
-  theta(nz) = 273.15d0 + 30.0d0  ! summer
+  theta     = 273.15d0 + 0.0d0
+  theta(nz) = 273.15d0 + 5.0d0
 
   ! Air temperature and pressure
   temp = theta - (grav/Cp)*hh
@@ -630,7 +629,7 @@ subroutine surface_values(temperature, time)
   ! Only when called for the first time, read in data from file
   ! With this trick, we don't need to open the file in the main program
   if (first_time) then
-     open(30, file=trim(adjustl(input_dir))//'/hyytiala_20110710-t_h2o.dat', status='old')   ! summer
+     open(30, file=trim(adjustl(input_dir))//'/hyltemossa_2018_4_06_t_h2o.dat', status='old')
      read(30, *) surface_data
      temperature_data(1:50) = surface_data(7,1:50) ! in Celcius
      first_time = .false.
