@@ -341,6 +341,12 @@ SUBROUTINE dry_dep_velocity(temperature, pressure, DSWF, &
   z0m = 0.9D0             ! Surface roughness length for momentum evergreen, needleleaf trees (m)     
   u_friction = ka * wind_speed10m / (log(zr/z0m))  ! Friction velocity (Eq. 16.67 from Seinfeld and Pandis, 2006)
 
+  if (Richards_nr10m < -1e-6) then ! unstable layer
+    ! Stability correction factor at 10 m 
+    Scf_zr = (sqrt(1.0_dp - gam*zr/L_Ob) - 1.0_dp) &
+          / (sqrt(1.0_dp - gam*zr/L_Ob) + 1.0_dp )
+  end if
+
   ! Land use category paramaters from Seinfeld and Pandis, 2006 Table 19.2: 
   r_coll = 2D-3 ! radius of collector evergreen, needleleaf trees
 
@@ -361,8 +367,6 @@ SUBROUTINE dry_dep_velocity(temperature, pressure, DSWF, &
     if (Richards_nr10m > 1D-6) then  ! stable boundary layer (Ri>1D-6)
       ra_particle(i) = (Pr * LOG(zr / z_rough_particle(i)) + beta / L_Ob * (zr - z_rough_particle(i))) / (ka * u_friction)
     else if (Richards_nr10m < -1D-6) then  ! unstable boundary layer Ri<-1D-6
-      ! Stability correction factor at 10 m
-      Scf_zr = (SQRT(1.0_dp - gam * zr / L_Ob) - 1.0_dp) / (SQRT(1.0_dp - gam * zr / L_Ob) + 1.0_dp)
       ! Stability correction factor at surface roughness length scale for molecules or particles
       Scf_rough_particle(i) = (SQRT(1.0_dp - gam * z_rough_particle(i) / L_Ob ) - 1.0_dp) &
                               / (SQRT(1.0_dp - gam * z_rough_particle(i) / L_Ob ) + 1.0_dp)
@@ -442,7 +446,7 @@ SUBROUTINE dry_dep_velocity(temperature, pressure, DSWF, &
   
   ! Calculate the bulk canopy stomatal resistance (rst)
   rj = 130D0 ! (s/m) Summer, evergreen, needleleaf. The minimum, bulk canopy stomatal resistance for water vapor
-  rst_h2o = rj * (1 + (200.0_dp / (DSWF + 0.1_dp))**2.0_dp * 400.0_dp / (temperature * (40.0_dp - temperature)))
+  rst_h2o = rj * (1 + (200.0_dp / (DSWF + 0.1_dp))**2.0_dp * 400.0_dp / ((temperature-273.15_dp) * (40.0_dp - (temperature-273.15_dp))))
   
   ! The resistance of the outer surfaces in the upper canopy ???
   rlu = 2000D0 ! (s/m) Summer, evergreen, needleleaf

@@ -262,14 +262,8 @@ DO WHILE (time <= time_end)
       end if
 
       ! Calculate Downward Shortwave Flux (DSWF)
-      ! Calculate cosine of solar zenith angle
       exp_coszen = get_exp_coszen(time, daynumber, latitude)
-      current_hourangle = get_hourangle(time)
-      current_zenith = solar_zenith_angle(current_hourangle, daynumber, latitude)
-      current_coszen = cos(current_zenith)
-      ! Clear-Sky DSWF, DSWF = solar_constant * cos(zenith) * transmission_factor??
-      DSWF = solar_constant * current_coszen * exp_coszen
-      ! DSWF = 486.66_dp * exp_coszen ! [W m-2]
+      DSWF = 486.66_dp * exp_coszen ! [W m-2]
 
       ! Calculate deposition velocity for particles and gases
       call dry_dep_velocity(temp(2), pres(2), DSWF, Richards_nr10m, wind_speed10m, vd_gas, vd_particle)
