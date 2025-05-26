@@ -8,11 +8,9 @@ height = height.reshape(-1)
 time   = np.loadtxt('time.dat')     # Time steps
 time   = time * 24
 
-Ri_winter     = np.loadtxt('Ri_winter.dat')       # Ri values (only for 49 altidudes)
-Ri_winter     = np.hstack([Ri_winter, Ri_winter[:, -1:]]) 
+Ri_winter = np.loadtxt('Ri_winter.dat').T
+Ri_summer = np.loadtxt('Ri_summer.dat').T
 
-Ri_summer     = np.loadtxt('Ri.dat')       # Ri values (only for 49 altidudes)
-Ri_summer     = np.hstack([Ri_summer, Ri_summer[:, -1:]]) 
 
 # Find boundary layer height at each time step
 boundary_layer_heights_winter = []
@@ -35,4 +33,4 @@ plt.title("Boundary layer (BL) height comparison in winter and in summer at SMEA
 plt.legend()
 plt.xlim(0,max(time))
 plt.grid()
-plt.savefig('bl_height_summer.png')
+plt.savefig('bl_height.png')
