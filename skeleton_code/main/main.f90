@@ -596,9 +596,7 @@ subroutine meteorology_init()
   vwind(nz) = vg
 
   ! Potential temperature
-  ! theta     = 273.15d0 + 0.0d0 ! winter
   theta     = 273.15d0 + 25.0d0  ! summer
-  ! theta(nz) = 273.15d0 + 5.0d0 ! winter
   theta(nz) = 273.15d0 + 30.0d0  ! summer
 
   ! Air temperature and pressure
@@ -623,7 +621,6 @@ subroutine surface_values(temperature, time)
   real(dp), intent(out)           :: temperature ! output, in Kelvin
   logical, save                   :: first_time = .true.
   real(dp), dimension(8,50), save :: surface_data ! summer
-  ! real(dp), dimension(7,50), save :: surface_data ! winter
   real(dp), dimension(50), save   :: temperature_data
   real(dp), parameter             :: seconds_in_day = 24*60*60
   real(dp), parameter             :: seconds_in_30min = 30*60
@@ -634,10 +631,8 @@ subroutine surface_values(temperature, time)
   ! With this trick, we don't need to open the file in the main program
   if (first_time) then
      open(30, file=trim(adjustl(input_dir))//'/hyytiala_20110710-t_h2o.dat', status='old')   ! summer
-    !  open(30, file=trim(adjustl(input_dir))//'/hyytiala_20110218-t_h2o.dat', status='old') ! winter
      read(30, *) surface_data
      temperature_data(1:50) = surface_data(7,1:50) ! in Celcius
-    !  temperature_data(1:50) = surface_data(7,1:50) + 40.0_dp! in Celcius
      first_time = .false.
   end if
 
