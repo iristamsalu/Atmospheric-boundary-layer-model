@@ -341,12 +341,6 @@ SUBROUTINE dry_dep_velocity(temperature, pressure, DSWF, &
   z0m = 0.9D0             ! Surface roughness length for momentum evergreen, needleleaf trees (m)     
   u_friction = ka * wind_speed10m / (log(zr/z0m))  ! Friction velocity (Eq. 16.67 from Seinfeld and Pandis, 2006)
 
-  if (Richards_nr10m < -1e-6) then ! unstable layer
-    ! Stability correction factor at 10 m 
-    Scf_zr = (sqrt(1.0_dp - gam*zr/L_Ob) - 1.0_dp) &
-          / (sqrt(1.0_dp - gam*zr/L_Ob) + 1.0_dp )
-  end if
-
   ! Land use category paramaters from Seinfeld and Pandis, 2006 Table 19.2: 
   r_coll = 2D-3 ! radius of collector evergreen, needleleaf trees
 
@@ -357,6 +351,11 @@ SUBROUTINE dry_dep_velocity(temperature, pressure, DSWF, &
   Pr = 0.95D0   ! Turbulent Prandtl number (when ka = 0.4 (Hogstrom, 1988))
   beta = 7.8D0  ! When ka = 0.4 (Hogstrom, 1988)
   gam = 11.6D0  ! When ka = 0.4 (Hogstrom, 1988)
+
+  ! Stability correction factor at 10 m
+  if (Richards_nr10m < -1D-6) then
+    Scf_zr = (SQRT(1.0_dp - gam * zr / L_Ob) - 1.0_dp) / (SQRT(1.0_dp - gam * zr / L_Ob) + 1.0_dp)  
+  end if
 
   do i=1, nr_bins
     ! Calculate the particle sedimentation velocity (m/s):
