@@ -379,7 +379,7 @@ SUBROUTINE dry_dep_velocity(temperature, pressure, DSWF, &
     Schmidt_particle(i) = v_kinematic / diffusivity_particle(i)
     rb_particle(i) = (3.0_dp * u_friction * EXP(-SQRT(St(i))) &
                     * (Schmidt_particle(i)**(-j_landuse)  &
-                    + St(i) / (a_landuse + St(i))**2.0_dp &
+                    + (St(i) / (a_landuse + St(i)))**2.0_dp &
                     + 0.5_dp*(diameter(i)/r_coll)**2.0_dp))**(-1.0_dp)
     
     ! Calculate the dry deposition velocity for particles:
@@ -451,9 +451,9 @@ SUBROUTINE dry_dep_velocity(temperature, pressure, DSWF, &
   rlu = 2000D0 ! (s/m) Summer, evergreen, needleleaf
   do j=1, num_gases
     ! Calculate the combined stomatal and mesophyll resistance (rsm):
-    rsm_gas(j) = rst_h2o * DiffusivityH2O / Diffusivity_gas(j) + 1.0_dp / (3.3_dp * 10D-4 * H_eff(j) + 100.0_dp * f0(j))
+    rsm_gas(j) = rst_h2o * DiffusivityH2O / Diffusivity_gas(j) + 1.0_dp / (3.3D-4 * H_eff(j) + 100.0_dp * f0(j))
     ! Calculate the resistance of the outer surfaces in the upper canopy (rlu):
-    rlu_gas(j) = rlu / (10D-5 * H_eff(j) + f0(j))
+    rlu_gas(j) = rlu / (1D-5 * H_eff(j) + f0(j))
   end do
 
   ! resistance for uptake by soil, leaf litter at the ground; (s/m) Summer, evergreen, needleleaf
@@ -465,10 +465,10 @@ SUBROUTINE dry_dep_velocity(temperature, pressure, DSWF, &
   do j=3, num_gases
     ! Calculate the resistance of the exposed surfaces in the lower portions of 
     ! structures of the canopy (rcl): 
-    rcl_gas(j) = (10D-5 * H_eff(j) / rcl_gas(1) + f0(j) / rcl_gas(2))**(-1.0_dp)
+    rcl_gas(j) = (1D-5 * H_eff(j) / rcl_gas(1) + f0(j) / rcl_gas(2))**(-1.0_dp)
     ! Calculate the resistance of the exposed surfaces on the groud 
     !(soil,leaf litter, ground) (rgs):
-    rgs_gas(j) = (10D-5 * H_eff(j) / rgs_gas(1) + f0(j) / rgs_gas(2))**(-1.0_dp)
+    rgs_gas(j) = (1D-5 * H_eff(j) / rgs_gas(1) + f0(j) / rgs_gas(2))**(-1.0_dp)
   end do
 
   ! Calculate the resistance to transfer by buoyant convection (rdc):
