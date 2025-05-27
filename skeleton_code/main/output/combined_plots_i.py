@@ -6,8 +6,8 @@ import matplotlib.ticker as mticker
 # File paths
 files = {
     "diameter": "diameter.dat",
-    "conc_10m": "particle_conc_10.dat",
-    "conc_2000m": "particle_conc_2000.dat",
+    "conc_10m": "particle_conc_100.dat",
+    "conc_2000m": "particle_conc_500.dat",
     "pn": "PN.dat",
     "pm": "PM.dat",
     "height": "hh.dat",

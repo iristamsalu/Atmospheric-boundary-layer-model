@@ -28,8 +28,8 @@ for el in all_data:
 
 
 plt.figure(figsize=(8, 6))
-plt.plot(par, all_avrg_iso, marker='o', label='Isoprene', color='yellow')
-plt.plot(par, all_avrg_mono, marker='s', label='Monoterpenes', color='purple')
+plt.plot(par, all_avrg_iso, marker='o', label='Isoprene', color='blue')
+plt.plot(par, all_avrg_mono, marker='s', label='Monoterpenes', color='red')
 plt.title('Emission rate vs Radiation Change')
 plt.xlabel('PAR multiplier')
 plt.ylabel('Average emission rate [molec cm⁻³ s⁻¹]')

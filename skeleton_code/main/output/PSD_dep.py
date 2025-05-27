@@ -5,8 +5,7 @@ import matplotlib.pyplot as plt
 
 # Input file names
 diameter_file = "diameter.dat"
-conc_file_10m = "particle_conc_10.dat"
-conc_file_2000m = "particle_conc_2000.dat"
+conc_file_100m = "particle_conc_10.dat"
 
 # Simulation time setup
 total_timesteps = 121
@@ -15,21 +14,20 @@ end_day = 6.0
 
 # Day 5: Time indices and plotting styles
 day5_indices = {
-    '9:00': 105, '10:00': 106, '11:00': 107, '12:00': 108, '13:00': 109,
-    '14:00': 110, '15:00': 111, '16:00': 112, '17:00': 113, '18:00': 114
+    '1:00': 97, '2:00': 98, '3:00': 99, '4:00': 100,
+    '5:00': 101, '6:00': 102, '7:00': 103, '8:00': 104, '9:00': 105
 }
 
 day5_styles = {
-    '9:00':  {'color': '#1569C7', 'linestyle': 'dashed'}, 
-    '10:00': {'color': 'black', 'linestyle': 'dashed'},
-    '11:00': {'color': 'yellow', 'linestyle': 'dashed'},
-    '12:00': {'color': 'purple', 'linestyle': 'dashed'},
-    '13:00': {'color': 'green', 'linestyle': 'solid'},
-    '14:00': {'color': 'aqua', 'linestyle': 'solid'},
-    '15:00': {'color': '#800000', 'linestyle': 'solid'},
-    '16:00': {'color': '#1569C7', 'linestyle': 'solid', 'marker': 'o'},
-    '17:00': {'color': 'orange',  'linestyle': 'solid', 'marker': 'o'},
-    '18:00': {'color': 'black',   'linestyle': 'solid', 'marker': 'o'}
+    '1:00': {'color': 'black', 'linestyle': 'dashed'},
+    '2:00': {'color': 'yellow', 'linestyle': 'dashed'},
+    '3:00': {'color': 'purple', 'linestyle': 'dashed'},
+    '4:00': {'color': 'green', 'linestyle': 'solid'},
+    '5:00': {'color': 'aqua', 'linestyle': 'solid'},
+    '6:00': {'color': '#800000', 'linestyle': 'solid'},
+    '7:00': {'color': '#1569C7', 'linestyle': 'solid', 'marker': 'o'},
+    '8:00': {'color': 'orange',  'linestyle': 'solid', 'marker': 'o'},
+    '9:00': {'color': 'black',   'linestyle': 'solid', 'marker': 'o'}
 }
 
 # --- Load Data ---
@@ -45,14 +43,12 @@ except Exception as e:
 
 # Load concentration data (in #/m³)
 try:
-    psd_m3_10m = np.loadtxt(conc_file_10m)
-    psd_m3_2000m = np.loadtxt(conc_file_2000m)
+    psd_m3_100m = np.loadtxt(conc_file_100m)
 except Exception as e:
     raise RuntimeError(f"Failed to load concentration data: {e}")
 
 # Convert from #/m³ to #/cm³
-psd_cm3_10m = psd_m3_10m / 1e6
-psd_cm3_2000m = psd_m3_2000m / 1e6
+psd_cm3_100m = psd_m3_100m / 1e6
 
 # --- Plotting Function ---
 
@@ -91,11 +87,9 @@ def plot_psd_lines(ax, diameter, psd_data, time_indices, styles, title):
 
 # --- Plotting ---
 
-fig, axes = plt.subplots(2, 1, figsize=(7, 10), sharex=True)
-fig.suptitle('Day 5 Particle Size Distributions', fontsize=14)
+fig, ax = plt.subplots(figsize=(7, 5))
 
-plot_psd_lines(axes[0], diameter_m, psd_cm3_10m, day5_indices, day5_styles, "At 10 m")
-plot_psd_lines(axes[1], diameter_m, psd_cm3_2000m, day5_indices, day5_styles, "At 2000 m")
+plot_psd_lines(ax, diameter_m, psd_cm3_100m, day5_indices, day5_styles, "PSD at 10 m")
 
-fig.tight_layout(rect=[0, 0.03, 1, 0.96])
-fig.savefig("PSD_day5.png", dpi=300)
+fig.tight_layout(rect=[0, 0.03, 1, 0.95])
+fig.savefig("PSD_day5_h10m.png", dpi=300)
