@@ -5,7 +5,7 @@ import matplotlib.ticker as ticker
 
 PN = np.loadtxt('PN.dat')
 # Extract data at 10 m height
-PN_coag_hh10 = PN[:, 1]
+PN_hh10 = PN[:, 1]
 
 time_hours = np.linspace(0, 120, 121)  # time in hours
 # Extract data for the 5th day
@@ -18,7 +18,7 @@ time_5th_day = time_hours[start_idx:end_idx] - start_hour
 
 
 plt.figure(figsize=(10, 6))
-plt.plot(time_5th_day, PN_coag_hh10[start_idx:end_idx], '-', color='red', label='10 m')
+plt.plot(time_5th_day, PN_hh10[start_idx:end_idx], '-', color='red', label='10 m')
 plt.title("Total PN at 10 m")
 plt.xlabel("Time (hours)")
 plt.ylabel(r"PN ($\mathrm{cm}^{-3}$)")

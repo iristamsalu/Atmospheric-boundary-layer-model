@@ -461,8 +461,8 @@ subroutine open_files()
   open(21,file=trim(adjustl(output_dir))//'/PN.dat', status='replace',action='write')
   open(22,file=trim(adjustl(output_dir))//'/PV.dat', status='replace',action='write')
   open(23,file=trim(adjustl(output_dir))//'/PM.dat', status='replace',action='write')
-  open(24,file=trim(adjustl(output_dir))//'/particle_conc_100.dat', status='replace',action='write')
-  open(25,file=trim(adjustl(output_dir))//'/particle_conc_500.dat', status='replace',action='write')
+  open(24,file=trim(adjustl(output_dir))//'/particle_conc_10.dat', status='replace',action='write')
+  open(25,file=trim(adjustl(output_dir))//'/particle_conc_100.dat', status='replace',action='write')
   open(26,file=trim(adjustl(output_dir))//'/dep_v_gas.dat', status='replace',action='write')
   open(27,file=trim(adjustl(output_dir))//'/dep_v_particle.dat', status='replace',action='write')
 end subroutine open_files
@@ -509,8 +509,8 @@ subroutine write_files(time)
   write(21, outfmt_level     ) PN_hh
   write(22, outfmt_level     ) PV_hh
   write(23, outfmt_level     ) PM_hh
-  write(24, outfmt_level_bins) particle_conc_hh(:,11) ! 100 m
-  write(25, outfmt_level_bins) particle_conc_hh(:,23) ! 500 m
+  write(24, outfmt_level_bins) particle_conc_hh(:,2) ! 10 m
+  write(25, outfmt_level_bins) particle_conc_hh(:,11) ! 100 m
   write(26, outfmt_level     ) vd_gas
   write(27, outfmt_level_bins) vd_particle
 
@@ -573,7 +573,7 @@ subroutine time_init()
   time_start_chemistry  = 3.0 * 24.0 * one_hour
   time_start_deposition = 3.0 * 24.0 * one_hour
   time_start_emission   = 4.625d0 * 24d0 * one_hour   ! emission starts at 4.625 days
-  time_start_aerosol    = 4.0 * 24.0 * one_hour     ! aerosol starts at 4.0 days
+  time_start_aerosol    = 4.500d0 * 24d0 * one_hour   ! aerosol starts at 4.0 days
 
   ! Loop number
   counter = 0
