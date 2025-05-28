@@ -14,7 +14,8 @@ i1 = np.abs(time - 5).argmin()
 time_hours = (time[i0:i1+1] - time[i0]) * 24
 T, D = np.meshgrid(time_hours, diam)
 
-vmin, vmax = 0, 3.0e4
+# 3) Contour levels and normalization (linear 0 → 2.5e4)
+vmin, vmax = 0, 2.5e4
 levels = np.linspace(vmin, vmax, 21)
 
 plt.figure(figsize=(8,5))
@@ -39,10 +40,10 @@ plt.title('PSD at 10 m')
 
 cbar = plt.colorbar(
     cs,
-    ticks=[0, 5000, 10000, 15000, 20000, 25000, 30000],
+    ticks=[0, 5000, 10000, 15000, 20000],
     spacing='proportional'
 )
-cbar.set_ticklabels(['0.0', '0.5', '1.0', '1.5', '2.0', '2.5', '3.0'])
+cbar.set_ticklabels(['0.0', '0.5', '1.0', '1.5', '2.0'])
 cbar.set_label(r'$\mathrm{d}N/\mathrm{d}\log_{10} D_p \ (10^{4} \ \mathrm{cm}^{-3})$')
 
 plt.tight_layout()
