@@ -453,7 +453,6 @@ subroutine open_files()
   open(14,file=trim(adjustl(output_dir))//'/Kh.dat'   ,status='replace',action='write')
   open(15,file=trim(adjustl(output_dir))//'/Ri.dat'   ,status='replace',action='write')
   open(16,file=trim(adjustl(output_dir))//'/Emissions.dat'   ,status='replace',action='write')
-!  open(17,file=trim(adjustl(output_dir))//'/Concentrations.dat', status='replace',action='write')
   open(17,file=trim(adjustl(output_dir))//'/Concentrations_h10.dat', status='replace',action='write')
   open(18,file=trim(adjustl(output_dir))//'/Concentrations_h50.dat', status='replace',action='write')
   open(19,file=trim(adjustl(output_dir))//'/Concentrations_h500.dat', status='replace',action='write')
@@ -500,8 +499,6 @@ subroutine write_files(time)
   write(14, outfmt_level     ) K_h
   write(15, outfmt_level     ) Ri_a
   write(16, *                ) F_veg_isoprene(2), F_veg_monoterpene(2)
-  ! conc (species, altitude)
-  ! write(17, outfmt_level_species) conc(:,:)
   write(17, outfmt_level     ) conc(:,6)
   write(18, outfmt_level     ) conc(:,6)
   write(19, outfmt_level     ) conc(:,23)
@@ -572,8 +569,8 @@ subroutine time_init()
   ! Start time for each process
   time_start_chemistry  = 3.0 * 24.0 * one_hour
   time_start_deposition = 3.0 * 24.0 * one_hour
-  time_start_emission   = 4.625d0 * 24d0 * one_hour   ! emission starts at 4.625 days
-  time_start_aerosol    = 4.500d0 * 24d0 * one_hour   ! aerosol starts at 4.0 days
+  time_start_emission   = 4.625 * 24d0 * one_hour   ! emission starts at 4.625 days
+  time_start_aerosol    = 4.0 * 24d0 * one_hour   ! aerosol starts at 4.0 days
 
   ! Loop number
   counter = 0
