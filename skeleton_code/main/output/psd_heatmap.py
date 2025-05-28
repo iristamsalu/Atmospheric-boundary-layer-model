@@ -14,7 +14,6 @@ i1 = np.abs(time - 5).argmin()
 time_hours = (time[i0:i1+1] - time[i0]) * 24
 T, D = np.meshgrid(time_hours, diam)
 
-# 3) Contour levels and normalization (linear 0 → 2.5e4)
 vmin, vmax = 0, 2.5e4
 levels = np.linspace(vmin, vmax, 21)
 

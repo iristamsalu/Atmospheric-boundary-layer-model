@@ -569,7 +569,7 @@ subroutine time_init()
   ! Start time for each process
   time_start_chemistry  = 3.0 * 24.0 * one_hour
   time_start_deposition = 3.0 * 24.0 * one_hour
-  time_start_emission   = 4.625d0 * 24d0 * one_hour   ! emission starts at 4.625 days
+  time_start_emission   = 4.625 * 240 * one_hour   ! emission starts at 4.625 days
   time_start_aerosol    = 4.0 * 24.0 * one_hour     ! aerosol starts at 4.0 days
 
   ! Loop number
