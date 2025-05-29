@@ -25,13 +25,12 @@ norm = mcolors.BoundaryNorm(levels, cmap.N)  # Ensure color boundaries match
 
 # Create the plot
 fig, ax = p.subplots(figsize=(8, 6))
-c = ax.contourf(time, height, Ri.T, levels=levels, cmap=cmap, norm=norm)  # Discrete contour plot
+c = ax.contourf(time, height, Ri.T, levels=levels, cmap=cmap, norm=norm)
 
 # Add colorbar
 cb = p.colorbar(c, ax=ax, boundaries=levels, ticks=levels, label='Ri (-)')
 ax.set_xlabel('Time (hours)')
 ax.set_ylabel('Altitude (m)')
-ax.set_title('SMEAR II 18.02.2011 \nRichardson number (Ri) with model v3')
+ax.set_title('Richardson number (Ri) with model v3')
 
-# Save and display
-p.savefig('Ri_summer.png')
+p.savefig('Ri_heatmap.png')

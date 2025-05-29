@@ -56,4 +56,4 @@ plt.legend()
 
 # Save plot
 plt.tight_layout()
-plt.savefig("PSD", dpi=300)
+plt.savefig("PSD")

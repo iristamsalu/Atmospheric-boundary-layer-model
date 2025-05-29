@@ -3,8 +3,8 @@ import matplotlib.pyplot as plt
 
 # === Configuration ===
 species_name = "H2SO4"
-species_index = 20              # Change this index based on the column position of H2SO4
-num_height_levels = 50         # Number of vertical levels per timestep
+species_index = 20              # Change based on the column position of a chemical species
+num_height_levels = 50         
 time_total_hours_span = 120    # Total duration in hours
 
 # === Load and Reshape Data ===
