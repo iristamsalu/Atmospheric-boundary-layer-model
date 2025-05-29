@@ -35,4 +35,4 @@ plt.title("Boundary layer (BL) height comparison in winter and in summer at SMEA
 plt.legend()
 plt.xlim(0,max(time))
 plt.grid()
-plt.savefig('bl_height_summer.png')
+plt.savefig('bl_height.png')
