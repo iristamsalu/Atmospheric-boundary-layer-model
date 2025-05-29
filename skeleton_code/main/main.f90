@@ -35,7 +35,7 @@ integer :: model_v = 3   ! Model version (1, 2 or 3) for meteorology
 ! integer, parameter :: dp = selected_real_kind(15, 307)
 
 ! Physics constants
-! real(dp), parameter :: PI     = 2*asin(1.0_dp)                  ! the constant pi
+! real(dp), parameter :: PI     = 2*asin(1.0_dp)                ! the constant pi; caused error because also defined another mod
 real(dp), parameter :: grav   = 9.81_dp                         ! [m s-2], gravitation
 real(dp), parameter :: Rgas   = 8.3144598_dp                    ! [J mol-1 K-1], universal gas constant
 real(dp), parameter :: NA     = 6.022140857e23_dp               ! [molec mol-1], Avogadro's number 
@@ -136,10 +136,10 @@ real(dp), dimension(nz) :: O2, N2, H2O, M
 !-----------------------------------------------------------------------------------------
 ! Aerosol variables
 !-----------------------------------------------------------------------------------------
-real(dp), dimension(2, nz) :: CS
-real(dp), dimension(100, nz) :: particle_conc_hh, particle_conc_hh_new
-real(dp), dimension(nz) :: PN_hh, PV_hh, PM_hh
-integer, parameter :: nr_bins=100 
+real(dp), dimension(2, nz) :: CS  ! Condensational sink for H2SO4 and ELVOC
+real(dp), dimension(100, nz) :: particle_conc_hh, particle_conc_hh_new  ! Aerosol concentration arrays
+real(dp), dimension(nz) :: PN_hh, PV_hh, PM_hh  ! Particle nr, particle volume, particle mass arrays
+integer, parameter :: nr_bins=100 ! Nr of PSD histogram bins, particle diameters
 
 !-----------------------------------------------------------------------------------------
 ! Deposition variables (local to main loop scope)
@@ -147,8 +147,7 @@ integer, parameter :: nr_bins=100
 real(dp) :: wind_speed10m         ! Calculated wind speed at 10m for deposition call
 real(dp) :: Richards_nr10m        ! Richardson number for deposition call
 real(dp) :: DSWF                  ! Downward Shortwave Flux
-real(dp) :: current_hourangle, current_zenith, current_coszen
-real(dp), parameter :: solar_constant = 1361.0_dp ! [W/m2], extraterrestrial solar flux
+
 
 !-----------------------------------------------------------------------------------------
 ! Initialization
@@ -178,44 +177,8 @@ DO WHILE (time <= time_end)
   !---------------------------------------------------------------------------------------
   ! Meteorology
   !---------------------------------------------------------------------------------------
-  ! Compute K_m for the current time step based on current wind profiles
-  call get_K(model_v, hh, uwind, vwind, theta, K_m, K_h, Ri_a)
-  ! Set lower boundary condition
-  call surface_values(theta(1), time+dt)
-
-  ! Update meteorology
-  DO hh_index = 2, size(hh) - 1
-    ! Update uwind
-    uwind_new(hh_index) = uwind(hh_index) + dt * ( &
-                     fcor * (vwind(hh_index) - vg) + &
-                     (K_m(hh_index) * (uwind(hh_index+1) - uwind(hh_index)) / (hh(hh_index+1) - hh(hh_index)) - &
-                     K_m(hh_index-1) * (uwind(hh_index) - uwind(hh_index-1)) / (hh(hh_index) - hh(hh_index-1))) / &
-                     ((hh(hh_index+1) - hh(hh_index-1)) / 2.0_dp))
-  END DO
-
-  DO hh_index = 2, size(hh) - 1
-    ! Update vwind
-    vwind_new(hh_index) = vwind(hh_index) + dt * ( &
-                     -fcor * (uwind(hh_index) - ug) + &
-                     (K_m(hh_index) * (vwind(hh_index+1) - vwind(hh_index)) / (hh(hh_index+1) - hh(hh_index)) - &
-                     K_m(hh_index-1) * (vwind(hh_index) - vwind(hh_index-1)) / (hh(hh_index) - hh(hh_index-1))) / &
-                     ((hh(hh_index+1) - hh(hh_index-1)) / 2.0_dp))
-  END DO
+  call advance_meteorology()
   
-  DO hh_index = 2, size(hh) - 1
-    ! Update potent. temperature
-    theta_new(hh_index) = theta(hh_index) + dt * ( &
-                     K_h(hh_index) * (theta(hh_index+1) - theta(hh_index)) / (hh(hh_index+1) - hh(hh_index)) - &
-                     K_h(hh_index-1) * (theta(hh_index) - theta(hh_index-1)) / (hh(hh_index) - hh(hh_index-1))) / &
-                     ((hh(hh_index+1) - hh(hh_index-1)) / 2.0_dp)                 
-  END DO
-  ! Update uwind, vwind and theta arrays with new meteorological state
-  uwind(2:nz-1) = uwind_new(2:nz-1)
-  vwind(2:nz-1) = vwind_new(2:nz-1)
-  theta(2:nz-1) = theta_new(2:nz-1)
-  
-  temp = theta - (grav/Cp)*hh
-  pres = barometric_law(p00, temp, hh)
   !---------------------------------------------------------------------------------------
   ! Emission
   !---------------------------------------------------------------------------------------
@@ -223,23 +186,8 @@ DO WHILE (time <= time_end)
   ! Compute emission part every dt_emis, multiplying 1000 to convert s to ms to make mod easier
   if ( use_emission .and. time >= time_start_emission ) then
     if ( mod( nint((time - time_start_emission)*1000.0d0), nint(dt_emis*1000.0d0) ) == 0 ) then
-      exp_coszen = get_exp_coszen(time, daynumber, latitude)
-      ! Calculate emission rates
-      call get_emissions(exp_coszen, temp(2), F_veg_isoprene(2), F_veg_monoterpene(2))  
-      ! Update concentration for isoprene
-      conc(13,2) = conc(13,2) + (F_veg_isoprene(2) * dt_emis) / (hc*100)
-      ! Update concentration for monoterpenes
-      conc(23,2) = conc(23,2) + (F_veg_monoterpene(2) * dt_emis) / (hc*100)
+      call apply_emissions()
     end if
-  end if
-
-  if ( use_emission .and. (.not. use_chemistry) ) then
-    ! Add emission to the number concentrations of compounds
-    ! Convert emissions from flux (molecules/cm2/s) to number concentration (molecules/cm3)
-    ! Update concentration for isoprene
-    ! conc(13,2) = conc(13,2) + (F_veg_isoprene(2) * dt_emis) / (hc*100)
-    ! Update concentration for monoterpenes
-    ! conc(23,2) = conc(23,2) + (F_veg_monoterpene(2) * dt_emis) / (hc*100)
   end if
 
   !---------------------------------------------------------------------------------------
@@ -249,38 +197,7 @@ DO WHILE (time <= time_end)
   ! Compute deposition part every dt_depo, multiplying 1000 to convert s to ms to make mod easier
   if ( use_deposition .and. time >= time_start_deposition ) then
     if ( mod( nint((time - time_start_deposition)*1000.0d0), nint(dt_depo*1000.0d0) ) == 0 ) then
-
-      ! Wind speed magnitude at level 2 (10m)
-      wind_speed10m = sqrt(uwind(2)**2 + vwind(2)**2)
-
-      ! Richardson number at level 2 (10m)
-      if (model_v == 3) then
-         Richards_nr10m = Ri_a(2)
-      else
-         ! if Ri not calculated
-         Richards_nr10m = 0.0_dp 
-      end if
-
-      ! Calculate Downward Shortwave Flux (DSWF)
-      exp_coszen = get_exp_coszen(time, daynumber, latitude)
-      DSWF = 486.66_dp * exp_coszen ! [W m-2]
-
-      ! Calculate deposition velocity for particles and gases
-      call dry_dep_velocity(temp(2), pres(2), DSWF, Richards_nr10m, wind_speed10m, vd_gas, vd_particle)
-
-      if (use_aerosol) then
-        do i = 1, nr_bins
-          ! Update particle concentrations by removing deposited particles at level 2 which includes canopy and soil
-          particle_conc_hh(i, 2) = particle_conc_hh(i, 2) * exp(-vd_particle(i) / hh(2) * dt_depo)
-        end do
-      end if
-      
-      ! Update gas concentrations by removing deposited gases at level 2
-      conc(20, 2) = conc(20, 2) * exp(-vd_gas(1) / hh(2) * dt_depo)  ! SO2
-      conc( 1, 2) = conc( 1, 2) * exp(-vd_gas(2) / hh(2) * dt_depo)  ! O3
-      conc(17, 2) = conc(17, 2) * exp(-vd_gas(3) / hh(2) * dt_depo)  ! HNO3
-      conc(13, 2) = conc(13, 2) * exp(-vd_gas(4) / hh(2) * dt_depo)  ! isoprene
-      conc(23, 2) = conc(23, 2) * exp(-vd_gas(5) / hh(2) * dt_depo)  ! apinene
+      call apply_deposition()
     end if
   end if
 
@@ -291,52 +208,17 @@ DO WHILE (time <= time_end)
   ! Compute chemistry part every dt_chem, multiplying 1000 to convert s to ms to make mod easier
   if ( use_chemistry .and. time >= time_start_chemistry ) then
     if ( mod( nint((time - time_start_chemistry)*1000.0d0), nint(dt_chem*1000.0d0) ) == 0 ) then
-      ! Solve chemical equations for each layer except boundaries
-      exp_coszen = get_exp_coszen(time, daynumber, latitude)
-      do hh_index=2, nz-1
-
-        M(hh_index)    = pres(hh_index)*NA / (Rgas*temp(hh_index)) * 1d-6   ! Air molecules concentration [molecules/cm3]
-        O2(hh_index)   = 0.21d0*M(hh_index)                                 ! Oxygen
-        N2(hh_index)   = 0.78d0*M(hh_index)                                 ! Nitrogen
-        H2O(hh_index)  = 1.0D16                                             ! Water
-        conc( 1, hh_index) = 24.0d0   * M(hh_index) * ppb     ! O3
-        conc( 5, hh_index) = 0.2d0    * M(hh_index) * ppb     ! NO2
-        conc( 6, hh_index) = 0.07d0   * M(hh_index) * ppb     ! NO
-        conc( 9, hh_index) = 100.0d0  * M(hh_index) * ppb     ! CO
-        conc(11, hh_index) = 1759.0d0 * M(hh_index) * ppb     ! CH4
-        conc(20, hh_index) = 0.5d0    * M(hh_index) * ppb     ! SO2
-
-
-        ! CS(1, hh_index) = 0.001_dp  ! CS for H2SO4
-        ! CS(2, hh_index) = 0.001_dp  ! CS for ELVOC
-        call chemistry_step(conc(1:neq, hh_index), time, time+dt_chem            , &
-                           O2(hh_index), N2(hh_index), M(hh_index), H2O(hh_index), &
-                           temp(hh_index), exp_coszen                            , &
-                           F_veg_isoprene(hh_index), F_veg_monoterpene(hh_index) , &
-                           CS(1, hh_index), CS(2, hh_index)) 
-      end do
-    end if  ! every dt_chem
+      call apply_chemistry()
+    end if
   end if
 
+  !---------------------------------------------------------------------------------------
+  ! Mix gas phase compounds 
+  !---------------------------------------------------------------------------------------
   ! Update concentrations of gas phase compounds if any of these processes are considered
   ! Deposition should not be used alone because it calculates nothing in that case
   if (use_emission .or. use_chemistry) then
-    ! Trick to make bottom flux zero
-    conc(1:neq,1) = conc(1:neq,2) ! concentration for layer 1 and layer 2 equal => no flux
-    conc(1:neq,nz) = 0.0_dp       ! concentration = 0 at the top layer
-    ! Concentrations can not be lower than 0
-    ! Mixing of chemical species
-    do i=1, neq
-        do hh_index = 2, size(hh) - 1
-          conc_new(i, hh_index) = conc(i, hh_index) + dt * ( &
-          K_h(hh_index) * (conc(i, hh_index+1) - conc(i, hh_index)) / (hh(hh_index+1) - hh(hh_index)) - &
-          K_h(hh_index-1) * (conc(i, hh_index) - conc(i, hh_index-1)) / (hh(hh_index) - hh(hh_index-1))) / &
-          ((hh(hh_index+1) - hh(hh_index-1)) / 2.0_dp)                 
-        end do
-    end do
-    conc = conc_new
-    ! Set the constraints above again for output
-    conc(1:neq,1) = conc(1:neq,2) ! concentration for layer 1 and layer 2 equal => no flux
+    call mix_chemistry()
   end if
 
   !---------------------------------------------------------------------------------------
@@ -346,57 +228,10 @@ DO WHILE (time <= time_end)
   ! Compute aerosol part every dt_aero, multiplying 1000 to convert s to ms to make mod easier
   if ( use_aerosol .and. time >= time_start_aerosol ) then
     if ( mod( nint((time - time_start_aerosol)*1000.0d0), nint(dt_aero*1000.0d0) ) == 0 ) then
-      ! Nucleation, condensation, coagulation and deposition of particles
-      do hh_index=2, nz-1
-        ! Initialize particle_conc for this height level from the last timestep
-        particle_conc(:) = particle_conc_hh(:, hh_index) 
-        ! H2SO4 and ELVOC concentrations at this height level
-        cond_vapour(1) = conc(21, hh_index) * 10.0_dp**6.0_dp ! [molec/cm3] 
-        cond_vapour(2) = conc(25, hh_index) * 10.0_dp**6.0_dp ! [molec/cm3] 
-
-        ! Compute nucleation with H2SO4
-        call nucleation(dt_aero, cond_vapour(1), nucleation_coef, particle_conc)
-
-        ! Compute condensation (updates CS for H2SO4 and ELVOC)
-        call condensation(dt_aero, temp(hh_index), pres(hh_index), mass_accomm, molecular_mass, molecular_volume, &
-                          molar_mass, molecular_dia, particle_mass, particle_volume, particle_conc, cond_sink,    &
-                          diameter, cond_vapour)
-  
-        ! Compute coagulation
-        call coagulation(dt_aero, particle_conc, diameter, temp(hh_index), pres(hh_index), particle_mass)
-
-        ! Store Condensation Sink (CS) for H2SO4 and ELVOC at different altitudes
-        CS(1, hh_index) = cond_sink(1)   ! CS for H2SO4
-        CS(2, hh_index) = cond_sink(2)   ! CS for ELVOC
-
-        ! Store particle concentration at different altitudes
-        particle_conc_hh(:, hh_index) = particle_conc(:)
-      end do
-    end if  ! every dt_aero
-
-    ! Trick to make bottom flux zero
-    particle_conc_hh(1:nr_bins, 1) = particle_conc_hh(1:nr_bins, 2)
-    ! Mixing of aerosol particles
-    particle_conc_hh_new = 0.0_dp
-    do hh_index=2, nz-1
-      particle_conc_hh_new(:, hh_index) = particle_conc_hh(:, hh_index) + dt * ( &
-      K_h(hh_index) * (particle_conc_hh(:, hh_index+1) - particle_conc_hh(:, hh_index)) / (hh(hh_index+1) - hh(hh_index)) - &
-      K_h(hh_index-1) * (particle_conc_hh(:, hh_index) - particle_conc_hh(:, hh_index-1)) / (hh(hh_index) - hh(hh_index-1))) / &
-      ((hh(hh_index+1) - hh(hh_index-1)) / 2.0_dp)                 
-    end do
-    particle_conc_hh(:, 2:nz-1) = particle_conc_hh_new(:, 2:nz-1)
-
-    ! Trick to make bottom flux zero
-    particle_conc_hh(1:nr_bins, 1) = particle_conc_hh(1:nr_bins, 2)
-
-    ! Update particle nr, particle mass, particle volume data for output files
-    do hh_index = 1, nz
-      PN_hh(hh_index) = sum(particle_conc_hh(:, hh_index)) * 1D-6  ! [cm-3]
-      PM_hh(hh_index) = sum(particle_conc_hh(:, hh_index) * particle_mass) * 1D9    ! [μg/m3]
-      PV_hh(hh_index) = sum(particle_conc_hh(:, hh_index) * particle_volume) * 1D12 ! [μm3/cm3]
-    end do
-
-  end if
+      call apply_aerosol()
+    end if ! every dt_aero
+    call mix_aerosol()
+  end if   
 
   !---------------------------------------------------------------------------------------
   ! Ending loop actions
@@ -429,6 +264,262 @@ write(*,*) counter,'time steps'
 
 contains
 
+
+!-----------------------------------------------------------------------------------------
+! subroutine advance_meteorology()
+!
+! Advances wind and temperature fields by one time step
+!-----------------------------------------------------------------------------------------
+subroutine advance_meteorology()
+  implicit none
+  integer :: k
+
+  ! Compute turbulent coefficients + Ri
+  call get_K(model_v, hh, uwind, vwind, theta, K_m, K_h, Ri_a)
+  ! Get surface values
+  call surface_values(theta(1), time+dt)
+
+  ! Time-step the prognostic winds & theta
+  do k = 2, nz-1
+    uwind_new(k) = uwind(k) + dt * ( &
+      fcor * (vwind(k) - vg) + &
+      ( K_m(k)*(uwind(k+1)-uwind(k))/(hh(k+1)-hh(k)) - &
+        K_m(k-1)*(uwind(k)  -uwind(k-1))/(hh(k)  -hh(k-1)) ) / &
+      ((hh(k+1)-hh(k-1))/2.0_dp) )
+  end do
+
+  do k = 2, nz-1
+    vwind_new(k) = vwind(k) + dt * ( &
+      -fcor * (uwind(k) - ug) + &
+      ( K_m(k)*(vwind(k+1)-vwind(k))/(hh(k+1)-hh(k)) - &
+        K_m(k-1)*(vwind(k)  -vwind(k-1))/(hh(k)  -hh(k-1)) ) / &
+      ((hh(k+1)-hh(k-1))/2.0_dp) )
+  end do
+
+  do k = 2, nz-1
+    theta_new(k) = theta(k) + dt * ( &
+      ( K_h(k)*(theta(k+1)-theta(k))/(hh(k+1)-hh(k)) - &
+        K_h(k-1)*(theta(k)  -theta(k-1))/(hh(k)  -hh(k-1)) ) / &
+      ((hh(k+1)-hh(k-1))/2.0_dp) )
+  end do
+
+  ! Overwrite old levels
+  uwind (2:nz-1) = uwind_new (2:nz-1)
+  vwind (2:nz-1) = vwind_new (2:nz-1)
+  theta(2:nz-1) = theta_new(2:nz-1)
+
+  ! Derive temperature and pressure
+  do k=1, nz
+    temp(k) = theta(k) - (grav/Cp)*hh(k)
+  end do
+  pres = barometric_law(p00, temp, hh)
+
+end subroutine advance_meteorology
+
+
+!-----------------------------------------------------------------------------------------
+! subroutine apply_emissions()
+!
+! Calculates biogenic emissions and updates isoprene and monoterpene concentrations
+!-----------------------------------------------------------------------------------------
+subroutine apply_emissions()
+  implicit none
+  exp_coszen = get_exp_coszen(time, daynumber, latitude)
+  ! Calculate emission rates
+  call get_emissions(exp_coszen, temp(2), F_veg_isoprene(2), F_veg_monoterpene(2))  
+  ! Update concentration for isoprene
+  conc(13,2) = conc(13,2) + (F_veg_isoprene(2) * dt_emis) / (hc*100)
+  ! Update concentration for monoterpenes
+  conc(23,2) = conc(23,2) + (F_veg_monoterpene(2) * dt_emis) / (hc*100)
+
+  if ( use_emission .and. (.not. use_chemistry) ) then
+    ! Add emission to the number concentrations of compounds
+    ! Convert emissions from flux (molecules/cm2/s) to number concentration (molecules/cm3)
+    ! Update concentration for isoprene
+    ! conc(13,2) = conc(13,2) + (F_veg_isoprene(2) * dt_emis) / (hc*100)
+    ! Update concentration for monoterpenes
+    ! conc(23,2) = conc(23,2) + (F_veg_monoterpene(2) * dt_emis) / (hc*100)
+  end if
+end subroutine apply_emissions
+
+
+!-----------------------------------------------------------------------------------------
+! subroutine apply_deposition()
+!
+! Computes dry deposition velocities and updates concentrations for gases and aerosols.
+!-----------------------------------------------------------------------------------------
+subroutine apply_deposition()
+  implicit none
+
+  ! Wind speed magnitude at level 2 (10m)
+  wind_speed10m = sqrt(uwind(2)**2 + vwind(2)**2)
+
+  ! Richardson number at level 2 (10m)
+  if (model_v == 3) then
+      Richards_nr10m = Ri_a(2)
+  else
+      ! if Ri not calculated
+      Richards_nr10m = 0.0_dp 
+  end if
+
+  ! Calculate Downward Shortwave Flux (DSWF)
+  exp_coszen = get_exp_coszen(time, daynumber, latitude)
+  DSWF = 486.66_dp * exp_coszen ! [W m-2]
+
+  ! Calculate deposition velocity for particles and gases
+  call dry_dep_velocity(temp(2), pres(2), DSWF, Richards_nr10m, wind_speed10m, vd_gas, vd_particle)
+
+  if (use_aerosol) then
+    do i = 1, nr_bins
+      ! Update particle concentrations by removing deposited particles at level 2 which includes canopy and soil
+      particle_conc_hh(i, 2) = particle_conc_hh(i, 2) * exp(-vd_particle(i) / hh(2) * dt_depo)
+    end do
+  end if
+  
+  ! Update gas concentrations by removing deposited gases at level 2
+  conc(20, 2) = conc(20, 2) * exp(-vd_gas(1) / hh(2) * dt_depo)  ! SO2
+  conc( 1, 2) = conc( 1, 2) * exp(-vd_gas(2) / hh(2) * dt_depo)  ! O3
+  conc(17, 2) = conc(17, 2) * exp(-vd_gas(3) / hh(2) * dt_depo)  ! HNO3
+  conc(13, 2) = conc(13, 2) * exp(-vd_gas(4) / hh(2) * dt_depo)  ! isoprene
+  conc(23, 2) = conc(23, 2) * exp(-vd_gas(5) / hh(2) * dt_depo)  ! apinene
+
+end subroutine apply_deposition
+
+
+!-----------------------------------------------------------------------------------------
+! subroutine apply_chemistry()
+!
+! Solves chemical reactions and updates concentrations for all gas-phase species.
+!-----------------------------------------------------------------------------------------
+subroutine apply_chemistry()
+  implicit none
+
+  ! Solve chemical equations for each layer except boundaries
+  exp_coszen = get_exp_coszen(time, daynumber, latitude)
+  do hh_index=2, nz-1
+
+    M(hh_index)    = pres(hh_index)*NA / (Rgas*temp(hh_index)) * 1d-6   ! Air molecules concentration [molecules/cm3]
+    O2(hh_index)   = 0.21d0*M(hh_index)                                 ! Oxygen
+    N2(hh_index)   = 0.78d0*M(hh_index)                                 ! Nitrogen
+    H2O(hh_index)  = 1.0D16                                             ! Water
+    conc( 1, hh_index) = 24.0d0   * M(hh_index) * ppb     ! O3
+    conc( 5, hh_index) = 0.2d0    * M(hh_index) * ppb     ! NO2
+    conc( 6, hh_index) = 0.07d0   * M(hh_index) * ppb     ! NO
+    conc( 9, hh_index) = 100.0d0  * M(hh_index) * ppb     ! CO
+    conc(11, hh_index) = 1759.0d0 * M(hh_index) * ppb     ! CH4
+    conc(20, hh_index) = 0.5d0    * M(hh_index) * ppb     ! SO2
+
+    ! CS(1, hh_index) = 0.001_dp  ! CS for H2SO4
+    ! CS(2, hh_index) = 0.001_dp  ! CS for ELVOC
+    call chemistry_step(conc(1:neq, hh_index), time, time+dt_chem            , &
+                        O2(hh_index), N2(hh_index), M(hh_index), H2O(hh_index), &
+                        temp(hh_index), exp_coszen                            , &
+                        F_veg_isoprene(hh_index), F_veg_monoterpene(hh_index) , &
+                        CS(1, hh_index), CS(2, hh_index)) 
+  end do
+
+end subroutine apply_chemistry
+
+
+!-----------------------------------------------------------------------------------------
+! subroutine mix_chemistry()
+!
+! Applies vertical turbulent mixing to gas-phase concentrations and enforces boundary conditions
+!-----------------------------------------------------------------------------------------
+subroutine mix_chemistry()
+  ! Trick to make bottom flux zero
+  conc(1:neq,1) = conc(1:neq,2) ! concentration for layer 1 and layer 2 equal => no flux
+  conc(1:neq,nz) = 0.0_dp       ! concentration = 0 at the top layer
+  ! Concentrations can not be lower than 0
+  ! Mixing of chemical species
+  do i=1, neq
+      do hh_index = 2, size(hh) - 1
+        conc_new(i, hh_index) = conc(i, hh_index) + dt * ( &
+        K_h(hh_index) * (conc(i, hh_index+1) - conc(i, hh_index)) / (hh(hh_index+1) - hh(hh_index)) - &
+        K_h(hh_index-1) * (conc(i, hh_index) - conc(i, hh_index-1)) / (hh(hh_index) - hh(hh_index-1))) / &
+        ((hh(hh_index+1) - hh(hh_index-1)) / 2.0_dp)                 
+      end do
+  end do
+  conc = conc_new
+  ! Set the constraints above again for output
+  conc(1:neq,1) = conc(1:neq,2) ! concentration for layer 1 and layer 2 equal => no flux
+
+end subroutine mix_chemistry
+
+
+!-----------------------------------------------------------------------------------------
+! subroutine apply_aerosol()
+!
+! Performs nucleation, condensation, and coagulation for aerosol particles at all levels
+!-----------------------------------------------------------------------------------------
+subroutine apply_aerosol()
+  implicit none
+  integer :: hh_index
+
+  do hh_index = 2, nz-1
+    ! Initialize particle_conc for this height level from the last timestep
+    particle_conc(:) = particle_conc_hh(:, hh_index)
+    ! H2SO4 and ELVOC concentrations at this height level
+    cond_vapour(1) = conc(21, hh_index) * 1.0d6  ! [molec/cm3]
+    cond_vapour(2) = conc(25, hh_index) * 1.0d6  ! [molec/cm3]
+
+    ! Compute nucleation with H2SO4
+    call nucleation(dt_aero, cond_vapour(1), nucleation_coef, particle_conc)
+
+    ! Compute condensation (updates CS for H2SO4 and ELVOC)
+    call condensation(dt_aero, temp(hh_index), pres(hh_index), mass_accomm, molecular_mass, molecular_volume, &
+                      molar_mass, molecular_dia, particle_mass, particle_volume, particle_conc, cond_sink,    &
+                      diameter, cond_vapour)
+
+    ! Compute coagulation
+    call coagulation(dt_aero, particle_conc, diameter, temp(hh_index), pres(hh_index), particle_mass)
+
+    ! Store Condensation Sink (CS) for H2SO4 and ELVOC at different altitudes
+    CS(1, hh_index) = cond_sink(1)   ! CS for H2SO4
+    CS(2, hh_index) = cond_sink(2)   ! CS for ELVOC
+
+    ! Store particle concentration at different altitudes
+    particle_conc_hh(:, hh_index) = particle_conc(:)
+  end do
+
+end subroutine apply_aerosol
+
+
+!-----------------------------------------------------------------------------------------
+! subroutine mix_aerosol()
+!
+! Applies vertical mixing to aerosol particle concentrations and updates PN, PM, PV output
+!-----------------------------------------------------------------------------------------
+subroutine mix_aerosol()
+  implicit none
+  integer :: hh_index
+
+  ! Trick to make bottom flux zero
+  particle_conc_hh(1:nr_bins, 1) = particle_conc_hh(1:nr_bins, 2)
+
+  ! Mixing of aerosol particles
+  particle_conc_hh_new = 0.0_dp
+  do hh_index = 2, nz-1
+    particle_conc_hh_new(:, hh_index) = particle_conc_hh(:, hh_index) + dt * ( &
+      K_h(hh_index)   * (particle_conc_hh(:, hh_index+1) - particle_conc_hh(:, hh_index))   / (hh(hh_index+1) - hh(hh_index)) - &
+      K_h(hh_index-1) * (particle_conc_hh(:, hh_index)   - particle_conc_hh(:, hh_index-1)) / (hh(hh_index)   - hh(hh_index-1)) ) / &
+      ((hh(hh_index+1) - hh(hh_index-1)) / 2.0_dp)
+  end do
+  particle_conc_hh(:, 2:nz-1) = particle_conc_hh_new(:, 2:nz-1)
+
+  ! Trick to make bottom flux zero again
+  particle_conc_hh(1:nr_bins, 1) = particle_conc_hh(1:nr_bins, 2)
+
+  ! Update particle nr, particle mass, particle volume data for output files
+  do hh_index = 1, nz
+    PN_hh(hh_index) = sum(particle_conc_hh(:, hh_index)) * 1D-6  ! [cm-3]
+    PM_hh(hh_index) = sum(particle_conc_hh(:, hh_index) * particle_mass) * 1D9    ! [μg/m3]
+    PV_hh(hh_index) = sum(particle_conc_hh(:, hh_index) * particle_volume) * 1D12 ! [μm3/cm3]
+  end do
+
+end subroutine mix_aerosol
+
+
 !-----------------------------------------------------------------------------------------
 ! subroutine open_files()
 !
@@ -454,7 +545,6 @@ subroutine open_files()
   open(14,file=trim(adjustl(output_dir))//'/Kh.dat'   ,status='replace',action='write')
   open(15,file=trim(adjustl(output_dir))//'/Ri.dat'   ,status='replace',action='write')
   open(16,file=trim(adjustl(output_dir))//'/Emissions.dat'   ,status='replace',action='write')
-!  open(17,file=trim(adjustl(output_dir))//'/Concentrations.dat', status='replace',action='write')
   open(17,file=trim(adjustl(output_dir))//'/Concentrations_h10.dat', status='replace',action='write')
   open(18,file=trim(adjustl(output_dir))//'/Concentrations_h50.dat', status='replace',action='write')
   open(19,file=trim(adjustl(output_dir))//'/Concentrations_h500.dat', status='replace',action='write')
@@ -501,9 +591,7 @@ subroutine write_files(time)
   write(14, outfmt_level     ) K_h
   write(15, outfmt_level     ) Ri_a
   write(16, *                ) F_veg_isoprene(2), F_veg_monoterpene(2)
-  ! conc (species, altitude)
-  ! write(17, outfmt_level_species) conc(:,:)
-  write(17, outfmt_level     ) conc(:,6)
+  write(17, outfmt_level     ) conc(:,2)    ! conc (species, altitude)
   write(18, outfmt_level     ) conc(:,6)
   write(19, outfmt_level     ) conc(:,23)
   write(20, outfmt_level     ) conc(:,40)
@@ -524,26 +612,11 @@ end subroutine write_files
 ! Close files
 !-----------------------------------------------------------------------------------------
 subroutine close_files()
-  close(8)
-  close(9)
-  close(10)
-  close(11)
-  close(12)
-  close(13)
-  close(14)
-  close(15)
-  close(16)
-  close(17)
-  close(18)
-  close(19)
-  close(20)
-  close(21)
-  close(22)
-  close(23)
-  close(24)
-  close(25)
-  close(26)
-  close(27)
+  integer :: unit
+
+  do unit = 8, 27
+    close(unit)
+  end do
 end subroutine close_files
 
 
@@ -647,159 +720,158 @@ subroutine surface_values(temperature, time)
 
   ! linear interpolation between previous and next temperature data value
   temperature = temp1 + x*(temp2 - temp1) + 273.15_dp ! now in Kelvin
-
-
 end subroutine surface_values
 
 
 !-----------------------------------------------------------------------------------------
+! Subroutine get_K()
+!
 ! Get K (turbulent	diffusivity)
 !-----------------------------------------------------------------------------------------
 subroutine get_K(model_v, hh, uwind, vwind, theta, K_m, K_h, Ri_a)
-! inputs
-real(dp), dimension(nz), intent(in)  :: hh
-real(dp), dimension(nz), intent(in)  :: uwind, vwind, theta
-integer, intent(in)                  :: model_v
-! output
-real(dp), dimension(nz-1), intent(out) :: K_m, K_h  ! turbulent diffusion coefficient array [m^2/s]
-real(dp), dimension(nz-1), intent(out) :: Ri_a  ! array of Richardson nr for testing the meteorology 
-! constants
-real(dp), parameter                  :: k = 0.4_dp  ! von Kármán constant
-real(dp), parameter                  :: lambda = 300.0_dp    ! mixing length scale [m]
-real(dp), parameter                  :: grav = 9.81_dp    ! [m s-2], gravitation
-! local variables
-integer                              :: hh_index
-real(dp)                             :: L   ! Blackadar mixing length
-real(dp)                             :: du_dz, dv_dz, windshear
-real(dp)                             :: Ri    ! Richardson nr
-real(dp)                             :: f_m, f_h  ! Dyer-Businger forms
-real(dp)                             :: a1, denom
+  ! inputs
+  real(dp), dimension(nz), intent(in)  :: hh
+  real(dp), dimension(nz), intent(in)  :: uwind, vwind, theta
+  integer, intent(in)                  :: model_v
+  ! output
+  real(dp), dimension(nz-1), intent(out) :: K_m, K_h  ! turbulent diffusion coefficient array [m^2/s]
+  real(dp), dimension(nz-1), intent(out) :: Ri_a  ! array of Richardson nr for testing the meteorology 
+  ! constants
+  real(dp), parameter                  :: k = 0.4_dp  ! von Kármán constant
+  real(dp), parameter                  :: lambda = 300.0_dp    ! mixing length scale [m]
+  real(dp), parameter                  :: grav = 9.81_dp    ! [m s-2], gravitation
+  ! local variables
+  integer                              :: hh_index
+  real(dp)                             :: L   ! Blackadar mixing length
+  real(dp)                             :: du_dz, dv_dz, windshear
+  real(dp)                             :: Ri    ! Richardson nr
+  real(dp)                             :: f_m, f_h  ! Dyer-Businger forms
+  real(dp)                             :: a1, denom
 
-! Model version 1
-IF (model_v == 1) THEN
-  K_m = 5.0_dp ! [m^2/s]
-  K_h = 5.0_dp ! [m^2/s]
+  ! Model version 1
+  IF (model_v == 1) THEN
+    K_m = 5.0_dp ! [m^2/s]
+    K_h = 5.0_dp ! [m^2/s]
 
-! Model version 2
-ELSE IF (model_v == 2) THEN
-  ! Calculate K_m for every altitude, except for boundary conditions
-  DO hh_index = 1, size(hh) - 1
-    ! Compute mixing length l
-    
-    ! L = k * hh(hh_index) / (1.0_dp + (k * hh(hh_index) / lambda))
-    ! eddies are also at model midpoint levels 
-    L = k * (hh(hh_index+1)+hh(hh_index))*0.5d0 / (1.0_dp + (k * (hh(hh_index+1)+hh(hh_index))*0.5d0 / lambda))
-    ! Calculate velocity changes with altitude
-    du_dz = (uwind(hh_index+1) - uwind(hh_index)) / (hh(hh_index+1) - hh(hh_index))
-    dv_dz = (vwind(hh_index+1) - vwind(hh_index)) / (hh(hh_index+1) - hh(hh_index))
-    ! Calculate windshear and K_m
-    windshear = sqrt((du_dz**2.0_dp) + (dv_dz**2.0_dp))
-    K_m(hh_index) = L**2.0_dp * windshear
-  END DO
-  K_h = K_m
+  ! Model version 2
+  ELSE IF (model_v == 2) THEN
+    ! Calculate K_m for every altitude, except for boundary conditions
+    DO hh_index = 1, size(hh) - 1
+      ! Compute mixing length l
+      
+      ! L = k * hh(hh_index) / (1.0_dp + (k * hh(hh_index) / lambda))
+      ! eddies are also at model midpoint levels 
+      L = k * (hh(hh_index+1)+hh(hh_index))*0.5d0 / (1.0_dp + (k * (hh(hh_index+1)+hh(hh_index))*0.5d0 / lambda))
+      ! Calculate velocity changes with altitude
+      du_dz = (uwind(hh_index+1) - uwind(hh_index)) / (hh(hh_index+1) - hh(hh_index))
+      dv_dz = (vwind(hh_index+1) - vwind(hh_index)) / (hh(hh_index+1) - hh(hh_index))
+      ! Calculate windshear and K_m
+      windshear = sqrt((du_dz**2.0_dp) + (dv_dz**2.0_dp))
+      K_m(hh_index) = L**2.0_dp * windshear
+    END DO
+    K_h = K_m
 
-!Model version 3
-ELSE IF (model_v == 3) THEN
-  ! calculate K_m at every altitude for uwind and vwind and K_h for theta
-  DO hh_index = 1, size(hh) - 1
-    ! calculate Richardson nr
-    denom = ((uwind(hh_index+1) - uwind(hh_index))**2.0_dp + &
-            (vwind(hh_index+1)  - vwind(hh_index))**2.0_dp)
-    Ri = grav / ((theta(hh_index+1) + theta(hh_index)) / 2.0_dp)  *  &
-                ((theta(hh_index+1) - theta(hh_index)) / denom)   *  &
-                (hh(hh_index+1) - hh(hh_index))
-    ! Fix Richardson number to reasonable bounds to avoid extremly low values
-    ! IF (Ri < -1.5_dp) THEN
-    !   Ri = -1.5_dp
-    ! END IF
-    
-    ! calculate Dyer-Businger form
-    ! unstable conditions
-    IF (Ri < 0.0_dp) THEN
-      f_m = (1.0_dp - 16.0_dp*Ri)**(0.5_dp)
-      f_h = (1.0_dp - 16.0_dp*Ri)**(0.75_dp)
-    ! conditions?
-    ELSE IF (Ri >= 0.0_dp .AND. Ri < 0.2_dp) THEN
-      a1  = (1.0_dp - 5.0_dp*Ri)**2.0_dp
-      f_m = max(a1, 0.1_dp)
-      f_h = max(a1, 0.1_dp)
-    ! very stable conditions
-    ELSE IF (Ri >= 0.2_dp) THEN
-      f_m = 0.1_dp
-      f_h = 0.1_dp
- 
-    END IF
+  !Model version 3
+  ELSE IF (model_v == 3) THEN
+    ! calculate K_m at every altitude for uwind and vwind and K_h for theta
+    DO hh_index = 1, size(hh) - 1
+      ! calculate Richardson nr
+      denom = ((uwind(hh_index+1) - uwind(hh_index))**2.0_dp + &
+              (vwind(hh_index+1)  - vwind(hh_index))**2.0_dp)
+      Ri = grav / ((theta(hh_index+1) + theta(hh_index)) / 2.0_dp)  *  &
+                  ((theta(hh_index+1) - theta(hh_index)) / denom)   *  &
+                  (hh(hh_index+1) - hh(hh_index))
+      ! Fix Richardson number to reasonable bounds to avoid extremly low values
+      ! IF (Ri < -1.5_dp) THEN
+      !   Ri = -1.5_dp
+      ! END IF
+      
+      ! calculate Dyer-Businger form
+      ! unstable conditions
+      IF (Ri < 0.0_dp) THEN
+        f_m = (1.0_dp - 16.0_dp*Ri)**(0.5_dp)
+        f_h = (1.0_dp - 16.0_dp*Ri)**(0.75_dp)
+      ! conditions?
+      ELSE IF (Ri >= 0.0_dp .AND. Ri < 0.2_dp) THEN
+        a1  = (1.0_dp - 5.0_dp*Ri)**2.0_dp
+        f_m = max(a1, 0.1_dp)
+        f_h = max(a1, 0.1_dp)
+      ! very stable conditions
+      ELSE IF (Ri >= 0.2_dp) THEN
+        f_m = 0.1_dp
+        f_h = 0.1_dp
+  
+      END IF
 
-    ! Compute mixing length l
-    L = k * (hh(hh_index+1)+hh(hh_index))*0.5d0 / (1.0_dp + (k * (hh(hh_index+1)+hh(hh_index))*0.5d0 / lambda))
-    ! Calculate velocity changes with altitude
-    du_dz = (uwind(hh_index+1) - uwind(hh_index)) / (hh(hh_index+1) - hh(hh_index))
-    dv_dz = (vwind(hh_index+1) - vwind(hh_index)) / (hh(hh_index+1) - hh(hh_index))
-    ! Calculate windshear
-    windshear = sqrt(MAX(0.0_dp, (du_dz**2.0_dp) + (dv_dz**2.0_dp)))
-    ! calculate K_m and K_h
-    K_m(hh_index) = (L**2.0_dp) * windshear * f_m
-    K_h(hh_index) = (L**2.0_dp) * windshear * f_h
-    ! append Richardson nr to an array
-    Ri_a(hh_index) = Ri
+      ! Compute mixing length l
+      L = k * (hh(hh_index+1)+hh(hh_index))*0.5d0 / (1.0_dp + (k * (hh(hh_index+1)+hh(hh_index))*0.5d0 / lambda))
+      ! Calculate velocity changes with altitude
+      du_dz = (uwind(hh_index+1) - uwind(hh_index)) / (hh(hh_index+1) - hh(hh_index))
+      dv_dz = (vwind(hh_index+1) - vwind(hh_index)) / (hh(hh_index+1) - hh(hh_index))
+      ! Calculate windshear
+      windshear = sqrt(MAX(0.0_dp, (du_dz**2.0_dp) + (dv_dz**2.0_dp)))
+      ! calculate K_m and K_h
+      K_m(hh_index) = (L**2.0_dp) * windshear * f_m
+      K_h(hh_index) = (L**2.0_dp) * windshear * f_h
+      ! append Richardson nr to an array
+      Ri_a(hh_index) = Ri
 
-  END DO
-END IF
-
+    END DO
+  END IF
 end subroutine get_K
 
+
 !-----------------------------------------------------------------------------------------
+! Subroutine get_emissions()
+!
 ! Get emissions
 !-----------------------------------------------------------------------------------------
 subroutine get_emissions(exp_coszen, temp, F_veg_isoprene, F_veg_monoterpene)
+  real(dp), intent(in)                 :: exp_coszen, temp
+  real(dp), intent(out)                :: F_veg_isoprene, &     ! Surface emission flux for isoprene
+                                          F_veg_monoterpene     ! Surface emission flux for isoprene
+  real(dp)                             :: gamma_isoprene,    &  ! adjustment factor dependent on T and light emission activity
+                                          gamma_monoterpene, &  ! adjustment factor dependent on T and light emission activity 
+                                          C_L,               &  
+                                          C_T,               &
+                                          PAR            
+  real(dp), parameter                  :: D_m = 0.0538_dp,    & ! Foliar density [g cm^-2]
+                                          eeta = 100.0_dp,    & ! ecosystem dependent emission factor [ng g^-1 h^-1]
+                                          delta = 1.0_dp,     & ! emission activity factor for long term controls
+                                          alpha = 0.0027_dp,  & ! 
+                                          c_L1 = 1.006_dp,    &
+                                          c_T1 = 95.0e3_dp,     & ! [kJ mol^-1]
+                                          c_T2 = 230.0e3_dp,    & ! [kJ mol^-1]
+                                          T_s = 303.15_dp,    & ! [K]
+                                          T_m = 314.0_dp,     & ! [K]
+                                          beeta = 0.09_dp       ! K^-1
+  real(dp), parameter                  :: M_isoprene = 68.12_dp, &  ! g/mol
+                                          M_monoterpene = 136.23_dp  ! g/mol
+  real(dp)                             :: height = 1000.0_dp  ! height (cm)
+            
+  PAR = 1000.0_dp * exp_coszen
+  C_L = alpha * c_L1 * PAR / sqrt(1.0_dp + alpha**2.0_dp * PAR**2.0_dp)
+  C_T = exp(c_T1 * (temp - T_s) / (Rgas * temp * T_s)) / (1.0_dp + exp(c_T2*(temp - T_m)/ (Rgas*temp*T_s)))
 
-real(dp), intent(in)                 :: exp_coszen, temp
-real(dp), intent(out)                :: F_veg_isoprene, &     ! Surface emission flux for isoprene
-                                        F_veg_monoterpene     ! Surface emission flux for isoprene
-real(dp)                             :: gamma_isoprene,    &  ! adjustment factor dependent on T and light emission activity
-                                        gamma_monoterpene, &  ! adjustment factor dependent on T and light emission activity 
-                                        C_L,               &  
-                                        C_T,               &
-                                        PAR            
-real(dp), parameter                  :: D_m = 0.0538_dp,    & ! Foliar density [g cm^-2]
-                                        eeta = 100.0_dp,    & ! ecosystem dependent emission factor [ng g^-1 h^-1]
-                                        delta = 1.0_dp,     & ! emission activity factor for long term controls
-                                        alpha = 0.0027_dp,  & ! 
-                                        c_L1 = 1.006_dp,    &
-                                        c_T1 = 95.0e3_dp,     & ! [kJ mol^-1]
-                                        c_T2 = 230.0e3_dp,    & ! [kJ mol^-1]
-                                        T_s = 303.15_dp,    & ! [K]
-                                        T_m = 314.0_dp,     & ! [K]
-                                        beeta = 0.09_dp       ! K^-1
-real(dp), parameter                  :: M_isoprene = 68.12_dp, &  ! g/mol
-                                        M_monoterpene = 136.23_dp  ! g/mol
-real(dp)                             :: height = 1000.0_dp  ! height (cm)
-           
-PAR = 1000.0_dp * exp_coszen
-C_L = alpha * c_L1 * PAR / sqrt(1.0_dp + alpha**2.0_dp * PAR**2.0_dp)
-C_T = exp(c_T1 * (temp - T_s) / (Rgas * temp * T_s)) / (1.0_dp + exp(c_T2*(temp - T_m)/ (Rgas*temp*T_s)))
+  ! isoprene emissions at 5-15m
+  gamma_isoprene = C_L * C_T
+  F_veg_isoprene = D_m * eeta * gamma_isoprene * delta
 
-! isoprene emissions at 5-15m
-gamma_isoprene = C_L * C_T
-F_veg_isoprene = D_m * eeta * gamma_isoprene * delta
+  ! monoterpene emissions at 5-15m
+  gamma_monoterpene = exp(beeta * (temp - T_s))
+  F_veg_monoterpene = D_m * eeta * gamma_monoterpene * delta
 
-! monoterpene emissions at 5-15m
-gamma_monoterpene = exp(beeta * (temp - T_s))
-F_veg_monoterpene = D_m * eeta * gamma_monoterpene * delta
-
-! Make sure F_veg is in correct units
-! Convert from ng cm**-2 h**-1 to ng cm**-2 s⁻¹
-F_veg_isoprene = F_veg_isoprene / 3600.0_dp
-F_veg_monoterpene = F_veg_monoterpene / 3600.0_dp
-! Convert ng to molecules
-F_veg_isoprene = F_veg_isoprene * (1.0_dp / 10.0_dp**9) * (1.0_dp / M_isoprene) * NA
-F_veg_monoterpene = F_veg_monoterpene * (1.0_dp / 10.0_dp**9) * (1.0_dp / M_monoterpene) * NA
-! Convert from molecules per cm² per s to molecules per cm³ per s
-F_veg_isoprene = F_veg_isoprene / height 
-F_veg_monoterpene = F_veg_monoterpene / height
-
+  ! Make sure F_veg is in correct units
+  ! Convert from ng cm**-2 h**-1 to ng cm**-2 s⁻¹
+  F_veg_isoprene = F_veg_isoprene / 3600.0_dp
+  F_veg_monoterpene = F_veg_monoterpene / 3600.0_dp
+  ! Convert ng to molecules
+  F_veg_isoprene = F_veg_isoprene * (1.0_dp / 10.0_dp**9) * (1.0_dp / M_isoprene) * NA
+  F_veg_monoterpene = F_veg_monoterpene * (1.0_dp / 10.0_dp**9) * (1.0_dp / M_monoterpene) * NA
+  ! Convert from molecules per cm² per s to molecules per cm³ per s
+  F_veg_isoprene = F_veg_isoprene / height 
+  F_veg_monoterpene = F_veg_monoterpene / height
 end subroutine get_emissions
-
 
 
 !-----------------------------------------------------------------------------------------
