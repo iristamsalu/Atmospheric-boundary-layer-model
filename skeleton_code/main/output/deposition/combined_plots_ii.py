@@ -7,12 +7,12 @@ import matplotlib.ticker as ticker
 PN_cond = np.loadtxt('PN_cond.dat')
 PN_coag = np.loadtxt('PN_coag.dat')
 PN_coag_cs = np.loadtxt('PN_coag_cs10-4.dat')
-PN_dep = np.loadtxt('PN.dat')
+PN_dep = np.loadtxt('PN_dep.dat')
 
 PM_cond = np.loadtxt('PM_cond.dat')
 PM_coag = np.loadtxt('PM_coag.dat')
 PM_coag_cs = np.loadtxt('PM_coag_cs10-4.dat')
-PM_dep = np.loadtxt('PM.dat')
+PM_dep = np.loadtxt('PM_dep.dat')
 
 # Deposition velocity
 vd_particle = np.loadtxt('dep_v_particle.dat')

@@ -15,10 +15,10 @@ Kh     = np.hstack([Kh, Kh[:, -1:]])    # Duplicate last column
 if Km.shape[1] != len(height):
     Km = Km.T  # transpose if necessary to align height with the second dimension
 
-# replace NaNs with zeros
-Km = np.nan_to_num(Km, nan=0.0)
-# change extreme values to a reasonable range
-Km = np.clip(Km, 0, None)  # adjust based on expected range
+# # replace NaNs with zeros
+# Km = np.nan_to_num(Km, nan=0.0)
+# # change extreme values to a reasonable range
+# Km = np.clip(Km, 0, None)  # adjust based on expected range
 
 # Define discrete levels (bins)
 levels = np.arange(0, 120, 15)  # Color bins
@@ -29,7 +29,7 @@ norm = mcolors.BoundaryNorm(levels, cmap.N)  # Ensure color boundaries match
 
 # Create the plot
 fig, ax = p.subplots(figsize=(8, 6))
-c = ax.contourf(time, height, Km.T, levels=levels, cmap=cmap, norm=norm)  # Discrete contour plot
+c = ax.contourf(time, height, Km.T, levels=levels, cmap=cmap, norm=norm)
 
 # Add colorbar
 cb = p.colorbar(c, ax=ax, boundaries=levels, ticks=levels, label=r"$K_m$ (m$^2$ s$^{-1}$)")
@@ -37,5 +37,4 @@ ax.set_xlabel("Time (day)")
 ax.set_ylabel("h (m)")
 ax.set_title("K3: Km")
 
-# Save and display
-p.savefig('meshplot_o.svg')
+p.savefig('Km_heatmap.png')

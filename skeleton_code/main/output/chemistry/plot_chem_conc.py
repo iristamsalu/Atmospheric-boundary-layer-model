@@ -2,7 +2,7 @@ import numpy as np
 from matplotlib import pyplot as p
 import random
 
-n = 12
+n = 12 
 name = "isoprene"
 
 data1 = np.loadtxt('Concentrations_h10.dat')

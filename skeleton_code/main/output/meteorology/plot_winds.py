@@ -1,7 +1,7 @@
 from matplotlib import pyplot as p
 import numpy as np
 
-# select parameters and data! 
+# select parameters and data
 model_v = 3     # model version
 day     = 1     # day
 i       = 0     # 0 - uwind, 1 - vwind, 2 - theta
@@ -44,8 +44,7 @@ p.grid(True)
 title = 'K' + str(model_v) + ' - Day ' + str(day)
 p.title(title)
 
-#p.show()
-p.savefig('profileplot_o.svg')
+p.savefig('meteorology.png')
     
 
 
